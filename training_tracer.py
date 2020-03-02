@@ -27,7 +27,7 @@ logging.basicConfig(
             '%(name)s [%(funcName)s:%(lineno)d] %(message)s'),
         stream=sys.stdout)
 LOGGER = logging.getLogger(__name__)
-logging.getLogger('taskgraph').setLevel(logging.INFO)
+#logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 
 def get_planet_mosaic(mosaic_name):
@@ -41,7 +41,7 @@ def get_planet_mosaic(mosaic_name):
         dictionary of mosaic object described in
         https://developers.planet.com/docs/basemaps/reference/#tag/Basemaps-and-Mosaics
     """
-
+    LOGGER.debug('get_planet_mosaic')
     mosaics_json = session.get(
         'https://api.planet.com/basemaps/v1/mosaics?name__is=%s' % mosaic_name,
         timeout=REQUEST_TIMEOUT)
@@ -73,8 +73,23 @@ if __name__ == '__main__':
         task_name='download %s' % KNOWN_DAMS_DATABASE_URL)
 
     # _execute_sqlite()
-    active_mosaic = get_planet_mosaic('global_quarterly_2019q2_mosaic')
+    get_mosaic_task = task_graph.add_task(
+        func=get_planet_mosaic,
+        args=('global_quarterly_2019q2_mosaic',),
+        task_name='get planet mosaic for %s' %
+        'global_quarterly_2019q2_mosaic')
+    get_mosaic_task.join()
+    active_mosaic = get_mosaic_task.get()
     LOGGER.debug('active_mosaic: %s', active_mosaic)
+
+    quads_json = session.get(
+        'https://api.planet.com/basemaps/v1/mosaics/{%s}/'
+        'quads?bbox=lx,ly,ux,uy' % (
+            'foo,',
+            active_mosaic['id']), timeout=REQUEST_TIMEOUT)
+
+    #LOGGER.debug(quads_json.json())
+
 
     task_graph.close()
     task_graph.join()
