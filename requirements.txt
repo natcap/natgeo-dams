@@ -1,0 +1,6 @@
+# requirements.txt
+# --------------------
+# This file records the packages and requirements needed in order for
+# these scripts to work as expected.
+
+requests
