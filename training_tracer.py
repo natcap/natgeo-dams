@@ -5,6 +5,7 @@ import sys
 
 import ecoshard
 import requests
+from taskgraph.Task import _execute_sqlite
 import taskgraph
 
 WORKSPACE_DIR = 'training_tracer_workspace'
@@ -62,7 +63,7 @@ if __name__ == '__main__':
     session = requests.Session()
     session.auth = (planet_api_key, '')
 
-    task_graph = taskgraph.TaskGraph(CHURN_DIR, 0, 5.0)
+    task_graph = taskgraph.TaskGraph(CHURN_DIR, -1, 5.0)
 
     known_dams_database_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(KNOWN_DAMS_DATABASE_URL))
@@ -82,14 +83,25 @@ if __name__ == '__main__':
     active_mosaic = get_mosaic_task.get()
     LOGGER.debug('active_mosaic: %s', active_mosaic)
 
-    quads_json = session.get(
-        'https://api.planet.com/basemaps/v1/mosaics/{%s}/'
-        'quads?bbox=lx,ly,ux,uy' % (
-            'foo,',
-            active_mosaic['id']), timeout=REQUEST_TIMEOUT)
+    known_dam_query = (
+        "SELECT lng_min, lat_min, lng_max, lat_max "
+        "FROM identified_dams "
+        "WHERE pre_known=1 AND dam_description NOT LIKE '%South Africa%' "
+        "ORDER BY dam_description;")
+
+    result = _execute_sqlite(
+        known_dam_query, known_dams_database_path,
+        execute='execute', argument_list=[], fetch='all')
+    for r in result:
+        LOGGER.debug(r)
+
+    # quads_json = session.get(
+    #     'https://api.planet.com/basemaps/v1/mosaics/{%s}/'
+    #     'quads?bbox=lx,ly,ux,uy' % (
+    #         'foo,',
+    #         active_mosaic['id']), timeout=REQUEST_TIMEOUT)
 
     #LOGGER.debug(quads_json.json())
-
 
     task_graph.close()
     task_graph.join()
