@@ -14,6 +14,7 @@ import taskgraph
 WORKSPACE_DIR = 'training_tracer_workspace'
 CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
 ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
+QUAD_DIR = os.path.join(CHURN_DIR, 'quads')
 STATUS_DATABASE_PATH = os.path.join(WORKSPACE_DIR, 'status_database.db')
 
 KNOWN_DAMS_DATABASE_URL = (
@@ -167,8 +168,21 @@ def get_quad(session, mosaic_id, bounding_box):
         LOGGER.exception('error on bounding box %s' % bounding_box)
 
 
+def fetch_quad(session, mosaic_id, quad_id, target_quad_path):
+    LOGGER.debug('fetch get quad')
+    try:
+        get_quad_url = (
+            f'https://api.planet.com/basemaps/v1/mosaics/'
+            f'{mosaic_id}/quads/{quad_id}')
+        quads_json = session.get(get_quad_url, timeout=REQUEST_TIMEOUT)
+        download_url = (quads_json.json())['_links']['download']
+        ecoshard.download_url(download_url, target_quad_path)
+    except Exception:
+        LOGGER.exception('error on bounding box %s' % bounding_box)
+
+
 if __name__ == '__main__':
-    for dir_path in [WORKSPACE_DIR, CHURN_DIR, ECOSHARD_DIR]:
+    for dir_path in [WORKSPACE_DIR, CHURN_DIR, ECOSHARD_DIR, QUAD_DIR]:
         try:
             os.makedirs(dir_path)
         except OSError:
@@ -242,15 +256,35 @@ if __name__ == '__main__':
         bounding_box = pickle.loads(bounding_box_pickle)
         LOGGER.debug('%s %s', record_id, bounding_box)
         quads_json = get_quad(session, active_mosaic['id'], bounding_box)
-        mosaic_id = quads_json.json()['items'][0]['id']
-        LOGGER.debug('%s %s', mosaic_id, record_id)
+        quad_id = quads_json.json()['items'][0]['id']
+        LOGGER.debug('%s %s', quad_id, record_id)
         _execute_sqlite(
             'UPDATE bounding_box_to_mosaic '
             'SET mosaic_id = ? '
             'WHERE record_id = ?', STATUS_DATABASE_PATH,
             mode='modify', execute='execute',
-            argument_list=[mosaic_id, record_id])
+            argument_list=[quad_id, record_id])
 
+    quad_id, _ = _execute_sqlite(
+        """
+        SELECT bounding_box_to_mosaic.mosaic_id, count(1) as dam_count
+        FROM bounding_box_to_mosaic
+        GROUP BY mosaic_id
+        ORDER by dam_count DESC
+        LIMIT 1
+        """, STATUS_DATABASE_PATH,
+        mode='read_only', execute='execute',
+        argument_list=[], fetch='one')
+
+    quad_path = os.path.join(
+        QUAD_DIR, '%s_%s.tif' % (active_mosaic['id'], quad_id))
+    fetch_quad_task = task_graph.add_task(
+        func=fetch_quad,
+        args=(session, active_mosaic['id'], quad_id, quad_path),
+        target_path_list=[quad_path],
+        task_name='fetch %s_%s' % (active_mosaic['id'], quad_id))
+
+    LOGGER.debug(fetch_quad_task.get())
     LOGGER.debug('closing')
     task_graph.close()
     task_graph.join()
