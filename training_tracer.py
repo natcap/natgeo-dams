@@ -209,9 +209,18 @@ if __name__ == '__main__':
         "bounding_box_to_mosaic (record_id, bounding_box, mosaic_id) "
         "VALUES (?, ?, ?);")
     create_status_database_task.join()
-    result = _execute_sqlite(
+    _execute_sqlite(
         insert_identified_dams_query, STATUS_DATABASE_PATH,
         mode='modify', execute='many', argument_list=argument_list)
+
+    bbs_to_find = _execute_sqlite(
+        'SELECT record_id, bounding_box '
+        'FROM bounding_box_to_mosaic '
+        'WHERE mosaic_id = \'X\'', STATUS_DATABASE_PATH,
+        mode='read_only', execute='execute', argument_list=[], fetch='all')
+
+    for record_id, bounding_box_pickle in bbs_to_find:
+        LOGGER.debug(record_id)
 
     # for r in result:
     #     LOGGER.debug(r)
