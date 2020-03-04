@@ -148,6 +148,25 @@ def create_status_database(database_path):
     connection.close()
 
 
+@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
+def get_quad(session, mosaic_id, bounding_box):
+    LOGGER.debug('get quad')
+    try:
+        url = (
+            'https://api.planet.com/basemaps/v1/mosaics/%s/'
+            'quads?bbox=%f,%f,%f,%f' % (
+                active_mosaic['id'],
+                bounding_box[0],
+                bounding_box[1],
+                bounding_box[2],
+                bounding_box[3]))
+        LOGGER.debug(url)
+        quads_json = session.get(url, timeout=REQUEST_TIMEOUT)
+        return quads_json
+    except Exception:
+        LOGGER.exception('error on bounding box %s' % bounding_box)
+
+
 if __name__ == '__main__':
     for dir_path in [WORKSPACE_DIR, CHURN_DIR, ECOSHARD_DIR]:
         try:
@@ -162,7 +181,7 @@ if __name__ == '__main__':
     session = requests.Session()
     session.auth = (planet_api_key, '')
 
-    task_graph = taskgraph.TaskGraph(CHURN_DIR, 0, 5.0)
+    task_graph = taskgraph.TaskGraph(CHURN_DIR, -1, 5.0)
 
     known_dams_database_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(KNOWN_DAMS_DATABASE_URL))
@@ -220,18 +239,18 @@ if __name__ == '__main__':
         mode='read_only', execute='execute', argument_list=[], fetch='all')
 
     for record_id, bounding_box_pickle in bbs_to_find:
-        LOGGER.debug(record_id)
+        bounding_box = pickle.loads(bounding_box_pickle)
+        LOGGER.debug('%s %s', record_id, bounding_box)
+        quads_json = get_quad(session, active_mosaic['id'], bounding_box)
+        mosaic_id = quads_json.json()['items'][0]['id']
+        LOGGER.debug('%s %s', mosaic_id, record_id)
+        _execute_sqlite(
+            'UPDATE bounding_box_to_mosaic '
+            'SET mosaic_id = ? '
+            'WHERE record_id = ?', STATUS_DATABASE_PATH,
+            mode='modify', execute='execute',
+            argument_list=[mosaic_id, record_id])
 
-    # for r in result:
-    #     LOGGER.debug(r)
-
-    # quads_json = session.get(
-    #     'https://api.planet.com/basemaps/v1/mosaics/{%s}/'
-    #     'quads?bbox=lx,ly,ux,uy' % (
-    #         'foo,',
-    #         active_mosaic['id']), timeout=REQUEST_TIMEOUT)
-
-    #LOGGER.debug(quads_json.json())
-
+    LOGGER.debug('closing')
     task_graph.close()
     task_graph.join()
