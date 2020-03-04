@@ -1,0 +1,24 @@
+# natcap/dam-inference-server-cpu:0.0.1
+FROM tensorflow/tensorflow:2.0.1-cpu
+
+RUN apt-get update \
+&& apt-get install -y \
+    build-essential \
+    libspatialindex-c4v5 \
+    mercurial \
+&& rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    flask \
+    numpy \
+    pillow \
+    rtree \
+    scipy \
+    shapely
+
+
+
+COPY fasterRCNN_08-26-withnotadams.pb /var/models/fasterRCNN_08-26-withnotadams.pb
+COPY tensorflow_inference_server.py /workspace/tensorflow_inference_server.py
+WORKDIR /workspace
+ENTRYPOINT ["python3", "tensorflow_inference_server.py", "/var/models/fasterRCNN_08-26-withnotadams.pb"]
