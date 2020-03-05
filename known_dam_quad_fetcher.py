@@ -131,7 +131,10 @@ def create_status_database(database_path):
 
 
 #@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
-def fetch_quad(session, mosaic_id, quad_id, target_quad_path):
+def fetch_quad(planet_api_key, mosaic_id, quad_id, target_quad_path):
+    session = requests.Session()
+    session.auth = (planet_api_key, '')
+
     LOGGER.debug('fetch get quad')
     try:
         get_quad_url = (
@@ -155,6 +158,7 @@ def fetch_quad(session, mosaic_id, quad_id, target_quad_path):
             insert_quad_url_into, quad_database_path,
             mode='modify', execute='execute',
             argument_list=[quad_id, quad_uri])
+        return True
     except Exception:
         LOGGER.exception('error on quad %s' % quad_id)
         raise
@@ -206,10 +210,10 @@ if __name__ == '__main__':
             QUAD_DIR, '%s_%s.tif' % (MOSAIC_ID, quad_id))
         fetch_quad_task = task_graph.add_task(
             func=fetch_quad,
-            args=(session, MOSAIC_ID, quad_id, quad_path),
-            target_path_list=[quad_path],
+            args=(planet_api_key, MOSAIC_ID, quad_id, quad_path),
             task_name='fetch %s_%s' % (MOSAIC_ID, quad_id))
-        fetch_quad_task.join()
+        if not fetch_quad_task.get():
+            raise RuntimeError('fetch %s failed' % quad_path)
 
     LOGGER.debug(fetch_quad_task.get())
     LOGGER.debug('closing')
