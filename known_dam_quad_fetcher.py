@@ -32,6 +32,7 @@ logging.basicConfig(
             '%(name)s [%(funcName)s:%(lineno)d] %(message)s'),
         stream=sys.stdout)
 LOGGER = logging.getLogger(__name__)
+LOGGER.addHandler(logging.FileHandler('log.txt'))
 #logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 
