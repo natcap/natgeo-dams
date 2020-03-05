@@ -146,6 +146,7 @@ def fetch_quad(session, mosaic_id, quad_id, target_quad_path):
         subprocess.run(
             'gsutil cp %s %s' % (target_quad_path, quad_uri),
             shell=True, check=True)
+        os.remove(target_quad_path)
         insert_quad_url_into = (
             "INSERT INTO "
             "quad_id_to_uri (quad_id, quad_uri) "
