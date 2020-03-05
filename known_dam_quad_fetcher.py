@@ -131,13 +131,12 @@ def create_status_database(database_path):
     connection.close()
 
 
-#@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
+@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def fetch_quad(planet_api_key, mosaic_id, quad_id, target_quad_path):
-    session = requests.Session()
-    session.auth = (planet_api_key, '')
-
-    LOGGER.debug('fetch get quad')
     try:
+        session = requests.Session()
+        session.auth = (planet_api_key, '')
+        LOGGER.debug('fetch get quad')
         get_quad_url = (
             f'https://api.planet.com/basemaps/v1/mosaics/'
             f'{mosaic_id}/quads/{quad_id}')
