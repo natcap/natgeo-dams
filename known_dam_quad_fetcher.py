@@ -2,8 +2,8 @@
 import os
 import logging
 import pathlib
-import pickle
 import sqlite3
+import subprocess
 import sys
 
 import ecoshard
@@ -18,10 +18,9 @@ QUAD_DIR = os.path.join(CHURN_DIR, 'quads')
 # This is the Planet Mosaic ID for global_quarterly_2019q2_mosaic
 MOSAIC_ID = '4ce5863a-fb3f-4cad-a899-b8c053af1858'
 # This was pre-calculated
-KNOWN_QUAD_ID_DATABASE = (
-    'https://ecoshards.blob.core.windows.net/ecoshard-container/'
-    'status_database_md5_9ee90b6c338c866e76eed55c724cff47.db')
-
+KNOWN_QUAD_ID_DATABASE_URI = (
+    'gs://natgeo-dams-data/ecoshards/'
+    'status_database_md5_1be8ade909ce3000d61f1c725cfa7429.db')
 
 PLANET_API_KEY_FILE = 'planet_api_key.txt'
 REQUEST_TIMEOUT = 1.5
@@ -131,25 +130,7 @@ def create_status_database(database_path):
     connection.close()
 
 
-@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
-def get_quad(session, mosaic_id, bounding_box):
-    LOGGER.debug('get quad')
-    try:
-        url = (
-            'https://api.planet.com/basemaps/v1/mosaics/%s/'
-            'quads?bbox=%f,%f,%f,%f' % (
-                active_mosaic['id'],
-                bounding_box[0],
-                bounding_box[1],
-                bounding_box[2],
-                bounding_box[3]))
-        LOGGER.debug(url)
-        quads_json = session.get(url, timeout=REQUEST_TIMEOUT)
-        return quads_json
-    except Exception:
-        LOGGER.exception('error on bounding box %s' % bounding_box)
-
-
+#@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def fetch_quad(session, mosaic_id, quad_id, target_quad_path):
     LOGGER.debug('fetch get quad')
     try:
@@ -159,8 +140,23 @@ def fetch_quad(session, mosaic_id, quad_id, target_quad_path):
         quads_json = session.get(get_quad_url, timeout=REQUEST_TIMEOUT)
         download_url = (quads_json.json())['_links']['download']
         ecoshard.download_url(download_url, target_quad_path)
+        quad_uri = (
+            'gs://natgeo-dams-data/known-dam-quads/%s' %
+            os.path.basename(target_quad_path))
+        subprocess.run(
+            'gsutil cp %s %s' % (target_quad_path, quad_uri),
+            shell=True, check=True)
+        insert_quad_url_into = (
+            "INSERT INTO "
+            "quad_id_to_uri (quad_id, quad_uri) "
+            "VALUES (?, ?);")
+        _execute_sqlite(
+            insert_quad_url_into, quad_database_path,
+            mode='modify', execute='execute',
+            argument_list=[quad_id, quad_uri])
     except Exception:
-        LOGGER.exception('error on bounding box %s' % bounding_box)
+        LOGGER.exception('error on quad %s' % quad_id)
+        raise
 
 
 if __name__ == '__main__':
@@ -180,19 +176,24 @@ if __name__ == '__main__':
     task_graph = taskgraph.TaskGraph(CHURN_DIR, -1, 5.0)
 
     quad_database_path = os.path.join(CHURN_DIR, 'quad_database.db')
+    gsutil_cp_command = 'gsutil cp %s %s' % (
+        KNOWN_QUAD_ID_DATABASE_URI, quad_database_path)
+    LOGGER.debug(gsutil_cp_command)
     download_database_task = task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(KNOWN_QUAD_ID_DATABASE, quad_database_path),
+        func=subprocess.run,
+        args=(gsutil_cp_command,),
+        kwargs={'shell': True, 'check': True},
+        task_name='download %s' % quad_database_path,
         hash_target_files=False,
-        target_path_list=[quad_database_path],
-        task_name='download %s' % quad_database_path)
+        target_path_list=[quad_database_path])
 
     quads_to_download_query = (
         """
         SELECT bounding_box_to_mosaic.quad_id
         FROM bounding_box_to_mosaic
-        LEFT JOIN quad_id_to_url ON bounding_box_to_mosaic.quad_id = quad_id_to_url.quad_id
-        WHERE quad_id_to_url.quad_id IS NULL;
+        LEFT JOIN quad_id_to_uri ON
+            bounding_box_to_mosaic.quad_id = quad_id_to_uri.quad_id
+        WHERE quad_id_to_uri.quad_id IS NULL;
         """)
 
     result = _execute_sqlite(
@@ -208,16 +209,6 @@ if __name__ == '__main__':
             target_path_list=[quad_path],
             task_name='fetch %s_%s' % (MOSAIC_ID, quad_id))
         fetch_quad_task.join()
-
-        quad_url = None
-        insert_quad_url_into = (
-            "INSERT INTO "
-            "quad_id_to_url (quad_id, quad_url) "
-            "VALUES (?, ?);")
-        _execute_sqlite(
-            insert_quad_url_into, quad_database_path,
-            mode='modify', execute='execute',
-            argument_list=[quad_id, quad_url])
 
     LOGGER.debug(fetch_quad_task.get())
     LOGGER.debug('closing')
