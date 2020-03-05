@@ -144,7 +144,7 @@ def fetch_quad(session, mosaic_id, quad_id, target_quad_path):
             'gs://natgeo-dams-data/known-dam-quads/%s' %
             os.path.basename(target_quad_path))
         subprocess.run(
-            'gsutil cp %s %s' % (target_quad_path, quad_uri),
+            './google-cloud-sdk/bin/gsutil cp %s %s' % (target_quad_path, quad_uri),
             shell=True, check=True)
         os.remove(target_quad_path)
         insert_quad_url_into = (
@@ -177,7 +177,7 @@ if __name__ == '__main__':
     task_graph = taskgraph.TaskGraph(CHURN_DIR, -1, 5.0)
 
     quad_database_path = os.path.join(CHURN_DIR, 'quad_database.db')
-    gsutil_cp_command = 'gsutil cp %s %s' % (
+    gsutil_cp_command = './google-cloud-sdk/bin/gsutil cp %s %s' % (
         KNOWN_QUAD_ID_DATABASE_URI, quad_database_path)
     LOGGER.debug(gsutil_cp_command)
     download_database_task = task_graph.add_task(
