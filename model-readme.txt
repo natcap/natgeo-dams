@@ -6,6 +6,9 @@ https://github.com/fizyr/tf-retinanet
 * Make a sample training set that can train this
 * Make a sample inference set that can detect this
 
+Docker image:
+    * docker run -it --rm -u $(id -u):$(id -g) natcap/dam-inference-server-cpu:0.0.1
+
 Data:
 gcloud
 project natgeo-dams

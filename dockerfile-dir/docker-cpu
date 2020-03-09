@@ -1,11 +1,12 @@
 # natcap/dam-inference-server-cpu:0.0.1
-FROM tensorflow/tensorflow:2.0.1-cpu
+FROM tensorflow/tensorflow:2.1.0-py3
 
-RUN apt-get update \
-&& apt-get install -y \
+RUN apt-get update -y
+RUN apt-get install -y \
     build-essential \
     libspatialindex-c4v5 \
-    mercurial \
+    emacs \
+    git \
 && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
@@ -16,9 +17,10 @@ RUN pip install --no-cache-dir \
     scipy \
     shapely
 
+RUN pip install Cython matplotlib opencv-python-headless pyyaml Pillow && \
+    pip install 'git+https://github.com/cocodataset/cocoapi#egg=pycocotools&subdirectory=PythonAPI'
 
+RUN git clone https://github.com/tensorflow/models.git /usr/local/tf_models
+WORKDIR /usr/local/tf_models
 
-COPY fasterRCNN_08-26-withnotadams.pb /var/models/fasterRCNN_08-26-withnotadams.pb
-COPY tensorflow_inference_server.py /workspace/tensorflow_inference_server.py
-WORKDIR /workspace
-ENTRYPOINT ["python3", "tensorflow_inference_server.py", "/var/models/fasterRCNN_08-26-withnotadams.pb"]
+ENTRYPOINT /bin/bash
