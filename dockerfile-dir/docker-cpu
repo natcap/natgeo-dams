@@ -1,5 +1,5 @@
 # natcap/dam-inference-server-cpu:0.0.1
-FROM tensorflow/tensorflow:2.0.1-py3
+FROM tensorflow/tensorflow:2.1.0-py3
 
 RUN apt-get update -y
 RUN apt-get install -y \
@@ -20,7 +20,10 @@ RUN pip install --no-cache-dir \
 RUN pip install Cython matplotlib opencv-python-headless pyyaml Pillow && \
     pip install 'git+https://github.com/cocodataset/cocoapi#egg=pycocotools&subdirectory=PythonAPI'
 
-RUN git clone https://github.com/tensorflow/models.git /usr/local/tf_models
+RUN echo export PATH=$PATH:/root/.local/bin >> /root/.bashrc
+RUN git clone https://github.com/fizyr/keras-retinanet.git /usr/local/keras-retinanet
+WORKDIR /usr/local/keras-retinanet
+RUN pip install . --user
 
 WORKDIR /usr/local/natgeo_dams
 ENTRYPOINT /bin/bash
