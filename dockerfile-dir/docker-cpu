@@ -17,6 +17,7 @@ COPY natgeo-dams-6e7bc2912661.json /usr/local/natgeo-dams-6e7bc2912661.json
 RUN /usr/local/gcloud-sdk/google-cloud-sdk/bin/gcloud auth activate-service-account --key-file=/usr/local/natgeo-dams-6e7bc2912661.json
 RUN /usr/local/gcloud-sdk/google-cloud-sdk/bin/gcloud config set project natgeo-dams
 
+RUN apt-get update -y
 RUN apt-get install software-properties-common -y
 RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
 RUN apt-get update -y
