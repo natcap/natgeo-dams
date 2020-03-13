@@ -11,7 +11,7 @@ RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud
 RUN ./google-cloud-sdk/install.sh
 RUN source /usr/local/gcloud-sdk/google-cloud-sdk/completion.bash.inc
 RUN source /usr/local/gcloud-sdk/google-cloud-sdk/path.bash.inc
-RUN echo export PATH=$PATH:/usr/local/gcloud-sdk/google-cloud-sdk/bin >> /root/.bashrc
+RUN echo "export PATH=$PATH:/usr/local/gcloud-sdk/google-cloud-sdk/bin" >> /root/.bashrc
 
 COPY natgeo-dams-6e7bc2912661.json /usr/local/natgeo-dams-6e7bc2912661.json
 RUN /usr/local/gcloud-sdk/google-cloud-sdk/bin/gcloud auth activate-service-account --key-file=/usr/local/natgeo-dams-6e7bc2912661.json
@@ -55,7 +55,7 @@ RUN apt install -y \
 RUN git clone https://github.com/fizyr/keras-retinanet.git /usr/local/keras-retinanet
 WORKDIR /usr/local/keras-retinanet
 RUN pip install . --user
-RUN echo export PATH=$PATH:/root/.local/bin >> /root/.bashrc
+RUN echo "export PATH=$PATH:/root/.local/bin" >> /root/.bashrc
 
 RUN pip install \
     git+https://github.com/richpsharp/ecoshard.git@feature/ECOSHARD-3-download-and-unzip \
