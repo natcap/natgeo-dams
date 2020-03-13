@@ -4,3 +4,4 @@
 # these scripts to work as expected.
 
 requests
+pypng

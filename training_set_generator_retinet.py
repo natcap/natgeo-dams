@@ -7,7 +7,10 @@ import sqlite3
 import subprocess
 import sys
 
+from osgeo import gdal
 import ecoshard
+import numpy
+import png
 import requests
 import retrying
 import taskgraph
@@ -16,7 +19,7 @@ WORKSPACE_DIR = 'training_set_workspace'
 ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
 ANNOTATIONS_CSV_PATH = os.path.join(WORKSPACE_DIR, 'annotations.csv')
 CLASSES_CSV_PATH = os.path.join(WORKSPACE_DIR, 'classes.csv')
-
+TRAINING_IMAGERY_DIR = os.path.join(WORKSPACE_DIR, 'training_imagery')
 PLANET_QUAD_DAMS_DATABASE_URI = (
     'gs://natgeo-dams-data/databases/'
     'quad_database_md5_12866cf27da2575f33652d197beb05d3.db')
@@ -100,12 +103,16 @@ def _execute_sqlite(
 
 
 def make_training_data(
-        dams_database_path, annotations_csv_path, classes_csv_path):
+        task_graph, dams_database_path, imagery_dir, annotations_csv_path,
+        classes_csv_path):
     """Make training data by fetching imagery and building CSVs.
 
     Parameters:
+        task_graph (taskgraph.Taskgraph): TaskGraph object to help with
+            scheduling downloads.
         dams_database_path (str): path to database containing a
             "bounding_box_to_mosaic" table.
+        imagery_dir (str): path to directory to store images.
         annotations_csv_path (str): path to a csv containing annotations.
             Each line is of the form: path/to/image.jpg,x1,y1,x2,y2,class_name
         classes_csv_path (str): path to csv containing classes definitions
@@ -118,13 +125,44 @@ def make_training_data(
     """
     result = _execute_sqlite(
         '''
-        SELECT bounding_box
+        SELECT
+            bounding_box,
+            quad_id_to_uri.quad_uri
         FROM bounding_box_to_mosaic
-        WHERE quad_id='757-890';
+        INNER JOIN quad_id_to_uri ON
+            bounding_box_to_mosaic.quad_id = quad_id_to_uri.quad_id
+        WHERE bounding_box_to_mosaic.quad_id='757-890';
         ''', dams_database_path, argument_list=[], fetch='all')
-    for (bounding_box_pickled,) in result:
+
+    downloaded_quad_set = set()
+
+    for (bounding_box_pickled, quad_uri) in result:
         bounding_box = pickle.loads(bounding_box_pickled)
-        LOGGER.debug(bounding_box)
+        quad_path = os.path.join(
+            imagery_dir, os.path.basename(quad_uri))
+        if quad_path not in downloaded_quad_set:
+            downloaded_quad_set.add(quad_path)
+            download_task = task_graph.add_task(
+                func=copy_from_gs,
+                args=(quad_uri, quad_path),
+                task_name='download quad %s' % quad_uri,
+                target_path_list=[quad_path])
+            download_task.join()
+            raster = gdal.OpenEx(quad_path, gdal.OF_RASTER)
+            quad_png = '%s.png' % os.path.splitext(quad_path)[0]
+            raster_array = raster.ReadAsArray()
+            LOGGER.debug(raster_array.shape)
+
+            row_count, col_count = raster_array.shape[1::]
+            image_2d = numpy.transpose(
+                raster_array, axes=[0, 2, 1]).reshape(
+                (-1,), order='F').reshape((-1, col_count*4))
+            LOGGER.debug(image_2d)
+            LOGGER.debug(image_2d.shape)
+            LOGGER.debug(image_2d.dtype)
+            png.from_array(image_2d, 'RGBA').save(quad_png)
+
+    task_graph.join()
 
 
 def copy_from_gs(gs_uri, target_path):
@@ -140,7 +178,7 @@ def copy_from_gs(gs_uri, target_path):
 
 def main():
     """Entry point."""
-    for dir_path in [WORKSPACE_DIR, ECOSHARD_DIR]:
+    for dir_path in [WORKSPACE_DIR, ECOSHARD_DIR, TRAINING_IMAGERY_DIR]:
         try:
             os.makedirs(dir_path)
         except OSError:
@@ -162,7 +200,8 @@ def main():
     task_graph.join()
 
     make_training_data(
-        planet_quad_dams_database_path, ANNOTATIONS_CSV_PATH, CLASSES_CSV_PATH)
+        task_graph, planet_quad_dams_database_path,
+        TRAINING_IMAGERY_DIR, ANNOTATIONS_CSV_PATH, CLASSES_CSV_PATH)
 
 
 if __name__ == '__main__':
