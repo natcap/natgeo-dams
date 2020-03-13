@@ -4,7 +4,7 @@
 
 FROM tensorflow/tensorflow:2.1.0-py3
 
-SHELL ["/bin/bash", "-ci"]
+SHELL ["/bin/bash", "-c"]
 
 WORKDIR /usr/local/gcloud-sdk
 RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-284.0.0-linux-x86_64.tar.gz?hl=id | tar -xvzf -
@@ -14,8 +14,8 @@ RUN source /usr/local/gcloud-sdk/google-cloud-sdk/path.bash.inc
 RUN echo export PATH=$PATH:/usr/local/gcloud-sdk/google-cloud-sdk/bin >> /root/.bashrc
 
 COPY natgeo-dams-6e7bc2912661.json /usr/local/natgeo-dams-6e7bc2912661.json
-RUN gcloud auth activate-service-account --key-file=/usr/local/natgeo-dams-6e7bc2912661.json
-RUN gcloud config set project natgeo-dams
+RUN /usr/local/gcloud-sdk/google-cloud-sdk/bin/gcloud auth activate-service-account --key-file=/usr/local/natgeo-dams-6e7bc2912661.json
+RUN /usr/local/gcloud-sdk/google-cloud-sdk/bin/gcloud config set project natgeo-dams
 
 RUN apt-get install software-properties-common -y
 RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
