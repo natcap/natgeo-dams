@@ -30,10 +30,6 @@ RUN apt-get install python3-gdal
 #    && export C_INCLUDE_PATH=/usr/include/gdal \
 #    && pip install GDAL==3.0.4
 
-RUN pip install \
-    git+https://github.com/richpsharp/ecoshard.git@feature/ECOSHARD-3-download-and-unzip \
-    pygeoprocessing
-
 RUN pip install Cython matplotlib opencv-python-headless pyyaml Pillow && \
     pip install 'git+https://github.com/cocodataset/cocoapi#egg=pycocotools&subdirectory=PythonAPI'
 
@@ -45,5 +41,9 @@ RUN pip install . --user
 RUN pip install pypng
 RUN apt install libffi-dev python3-setuptools gcc python3-dev -y
 RUN pip install gsutil
+
+RUN pip install \
+    git+https://github.com/richpsharp/ecoshard.git@feature/ECOSHARD-3-download-and-unzip \
+    git+https://github.com/natcap/pygeoprocessing.git@release/2.0
 
 WORKDIR /usr/local/natgeo_dams
