@@ -137,6 +137,8 @@ def make_training_data(
 
     quad_gs_to_png_map = {}
 
+    with open(classes_csv_path, 'w') as classes_csv_file:
+        classes_csv_file.write('dam,0\n')
     annotations_csv_file = open(annotations_csv_path, 'w')
 
     for (bounding_box_pickled, quad_uri) in result:
