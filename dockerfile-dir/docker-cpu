@@ -25,9 +25,9 @@ RUN apt-get update -y
 RUN apt-get install gdal-bin -y
 RUN apt-get install libgdal-dev -y
 
-RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal \
-    && export C_INCLUDE_PATH=/usr/include/gdal \
-    && pip install GDAL==3.0.2
+#RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal \
+#    && export C_INCLUDE_PATH=/usr/include/gdal \
+#    && pip install GDAL==3.0.4
 
 RUN pip install \
     git+https://github.com/richpsharp/ecoshard.git@feature/ECOSHARD-3-download-and-unzip \
@@ -42,5 +42,7 @@ WORKDIR /usr/local/keras-retinanet
 RUN pip install . --user
 
 RUN pip install pypng
+RUN apt install libffi-dev python3-setuptools gcc python3-dev -y
+RUN pip install gsutil
 
 WORKDIR /usr/local/natgeo_dams
