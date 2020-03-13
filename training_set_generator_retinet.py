@@ -4,6 +4,7 @@ import logging
 import pathlib
 import pickle
 import sqlite3
+import subprocess
 import sys
 
 import ecoshard
@@ -16,10 +17,9 @@ ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
 ANNOTATIONS_CSV_PATH = os.path.join(WORKSPACE_DIR, 'annotations.csv')
 CLASSES_CSV_PATH = os.path.join(WORKSPACE_DIR, 'classes.csv')
 
-KNOWN_DAMS_DATABASE_URL = (
-    'https://storage.googleapis.com/natcap-natgeo-dam-ecoshards/'
-    'find-the-dams_report_md5_e12d71eb5026751217bd286e9b4c2afe.db')
-
+PLANET_QUAD_DAMS_DATABASE_URI = (
+    'gs://natgeo-dams-data/databases/'
+    'quad_database_md5_12866cf27da2575f33652d197beb05d3.db')
 
 logging.basicConfig(
         level=logging.DEBUG,
@@ -127,6 +127,17 @@ def make_training_data(
         LOGGER.debug(bounding_box)
 
 
+def copy_from_gs(gs_uri, target_path):
+    """Copy a GS objec to `target_path."""
+    dirpath = os.path.dirname(target_path)
+    try:
+        os.makedirs(dirpath)
+    except Exception:
+        pass
+    subprocess.run(
+        'gsutil cp %s %s' % (gs_uri, target_path), shell=True, check=True)
+
+
 def main():
     """Entry point."""
     for dir_path in [WORKSPACE_DIR, ECOSHARD_DIR]:
@@ -137,13 +148,21 @@ def main():
 
     task_graph = taskgraph.TaskGraph(WORKSPACE_DIR, -1)
 
-    known_dams_db_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(KNOWN_DAMS_DATABASE_URL))
+    PLANET_QUAD_DAMS_DATABASE_URI
+
+    planet_quad_dams_database_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(PLANET_QUAD_DAMS_DATABASE_URI))
     task_graph.add_task(
-        func=ecoshard.download_url,
-        args=(KNOWN_DAMS_DATABASE_URL, known_dams_db_path),
-        target_path_list=[known_dams_db_path])
-    pass
+        func=copy_from_gs,
+        args=(
+            PLANET_QUAD_DAMS_DATABASE_URI,
+            planet_quad_dams_database_path),
+        task_name='download planet quad db',
+        target_path_list=[planet_quad_dams_database_path])
+    task_graph.join()
+
+    make_training_data(
+        planet_quad_dams_database_path, ANNOTATIONS_CSV_PATH, CLASSES_CSV_PATH)
 
 
 if __name__ == '__main__':
