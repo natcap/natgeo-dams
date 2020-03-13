@@ -10,6 +10,7 @@ import sys
 from osgeo import gdal
 import ecoshard
 import numpy
+import pygeoprocessing
 import png
 import requests
 import retrying
@@ -134,22 +135,23 @@ def make_training_data(
         WHERE bounding_box_to_mosaic.quad_id='757-890';
         ''', dams_database_path, argument_list=[], fetch='all')
 
-    downloaded_quad_set = set()
+    quad_gs_to_png_map = {}
+
+    annotations_csv_file = open(annotations_csv_path, 'w')
 
     for (bounding_box_pickled, quad_uri) in result:
         bounding_box = pickle.loads(bounding_box_pickled)
-        quad_path = os.path.join(
+        quad_raster_path = os.path.join(
             imagery_dir, os.path.basename(quad_uri))
-        if quad_path not in downloaded_quad_set:
-            downloaded_quad_set.add(quad_path)
+        if quad_raster_path not in quad_gs_to_png_map:
             download_task = task_graph.add_task(
                 func=copy_from_gs,
-                args=(quad_uri, quad_path),
+                args=(quad_uri, quad_raster_path),
                 task_name='download quad %s' % quad_uri,
-                target_path_list=[quad_path])
+                target_path_list=[quad_raster_path])
             download_task.join()
-            raster = gdal.OpenEx(quad_path, gdal.OF_RASTER)
-            quad_png = '%s.png' % os.path.splitext(quad_path)[0]
+            raster = gdal.OpenEx(quad_raster_path, gdal.OF_RASTER)
+            quad_png_path = '%s.png' % os.path.splitext(quad_raster_path)[0]
             raster_array = raster.ReadAsArray()
             LOGGER.debug(raster_array.shape)
 
@@ -160,9 +162,22 @@ def make_training_data(
             LOGGER.debug(image_2d)
             LOGGER.debug(image_2d.shape)
             LOGGER.debug(image_2d.dtype)
-            png.from_array(image_2d, 'RGBA').save(quad_png)
+            png.from_array(image_2d, 'RGBA').save(quad_png_path)
+            quad_gs_to_png_map[quad_raster_path] = quad_png_path
 
+        quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
+        inv_gt = gdal.InvGeoTransform(
+            quad_info['geotransform'])
+        ul_i, ul_j = gdal.ApplyGeoTransform(
+            inv_gt, bounding_box[0], bounding_box[1])
+        lr_i, lr_j = gdal.ApplyGeoTransform(
+            inv_gt, bounding_box[2], bounding_box[3])
+        annotations_csv_file.write(
+            '%s,%d,%d,%d,%d,dam\n' % (
+                quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j))
     task_graph.join()
+
+    annotations_csv_file.close()
 
 
 def copy_from_gs(gs_uri, target_path):
