@@ -4,6 +4,7 @@
 
 FROM tensorflow/tensorflow:2.1.0-py3
 
+RUN apt-get update -y
 RUN apt-get install software-properties-common -y
 RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
 RUN apt-get update -y
