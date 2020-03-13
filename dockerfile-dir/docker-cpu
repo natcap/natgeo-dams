@@ -62,4 +62,3 @@ RUN pip install \
     git+https://github.com/natcap/pygeoprocessing.git@release/2.0
 
 WORKDIR /usr/local/natgeo_dams
-

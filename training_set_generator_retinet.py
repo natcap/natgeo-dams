@@ -189,8 +189,7 @@ def copy_from_gs(gs_uri, target_path):
         os.makedirs(dirpath)
     except Exception:
         pass
-    subprocess.run(
-        'gsutil cp %s %s' % (gs_uri, target_path), shell=True, check=True)
+    subprocess.run('gsutil cp %s %s' % (gs_uri, target_path), shell=True)
 
 
 def main():
