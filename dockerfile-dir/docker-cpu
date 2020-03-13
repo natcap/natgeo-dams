@@ -4,7 +4,7 @@
 
 FROM tensorflow/tensorflow:2.1.0-py3
 
-SHELL ["/bin/bash"]
+SHELL ["/bin/bash", "-c"]
 
 WORKDIR /usr/local/gcloud-sdk
 RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-284.0.0-linux-x86_64.tar.gz?hl=id | tar -xvzf -
