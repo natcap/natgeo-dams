@@ -4,10 +4,9 @@
 
 FROM tensorflow/tensorflow:2.1.0-py3
 
-WORKSPACE /usr/local/gcloud-sdk
+WORKDIR /usr/local/gcloud-sdk
 RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-284.0.0-linux-x86_64.tar.gz?hl=id | tar -xvzf -
 RUN ./google-cloud-sdk/install.sh
-
 
 COPY natgeo-dams-6e7bc2912661.json /usr/local/natgeo-dams-6e7bc2912661.json
 RUN gcloud auth activate-service-account --key-file=/usr/local/natgeo-dams-6e7bc2912661.json
