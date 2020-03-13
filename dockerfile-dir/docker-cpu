@@ -4,6 +4,8 @@
 
 FROM tensorflow/tensorflow:2.1.0-py3
 
+RUN apt-get install software-properties-common -y
+RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
 RUN apt-get update -y
 RUN apt-get install -y \
     build-essential \
@@ -12,38 +14,41 @@ RUN apt-get install -y \
     git
 
 RUN pip install --no-cache-dir \
+    Cython \
     flask \
+    matplotlib \
     numpy \
+    opencv-python-headless \
     pillow \
+    Pillow \
+    pyyaml \
     rtree \
     scipy \
-    shapely
+    shapely \
+    pypng \
 
-RUN apt-get install software-properties-common -y
-RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
-RUN apt-get update -y
-RUN apt-get install gdal-bin -y
-RUN apt-get install libgdal-dev -y
-RUN apt-get install python3-gdal
-
-#RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal \
-#    && export C_INCLUDE_PATH=/usr/include/gdal \
-#    && pip install GDAL==3.0.4
-
-RUN pip install Cython matplotlib opencv-python-headless pyyaml Pillow && \
-    pip install 'git+https://github.com/cocodataset/cocoapi#egg=pycocotools&subdirectory=PythonAPI'
-
-RUN echo export PATH=$PATH:/root/.local/bin >> /root/.bashrc
-RUN git clone https://github.com/fizyr/keras-retinanet.git /usr/local/keras-retinanet
-WORKDIR /usr/local/keras-retinanet
-RUN pip install . --user
-
-RUN pip install pypng
-RUN apt install libffi-dev python3-setuptools gcc python3-dev -y
-RUN pip install gsutil
+RUN apt-get install -y \
+    gdal-bin \
+    libgdal-dev \
+    python3-gdal
 
 RUN pip install \
     git+https://github.com/richpsharp/ecoshard.git@feature/ECOSHARD-3-download-and-unzip \
     git+https://github.com/natcap/pygeoprocessing.git@release/2.0
+
+RUN apt install -y \
+    libffi-dev \
+    python3-setuptools \
+    gcc \
+    python3-dev
+
+RUN pip install gsutil
+
+
+RUN git clone https://github.com/fizyr/keras-retinanet.git /usr/local/keras-retinanet
+WORKDIR /usr/local/keras-retinanet
+RUN pip install . --user
+RUN echo export PATH=$PATH:/root/.local/bin >> /root/.bashrc
+
 
 WORKDIR /usr/local/natgeo_dams
