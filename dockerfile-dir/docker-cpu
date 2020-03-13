@@ -11,5 +11,54 @@ RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud
 RUN ./google-cloud-sdk/install.sh
 RUN source /usr/local/gcloud-sdk/google-cloud-sdk/completion.bash.inc
 RUN source /usr/local/gcloud-sdk/google-cloud-sdk/path.bash.inc
+RUN echo export PATH=$PATH:/usr/local/gcloud-sdk/google-cloud-sdk/bin >> /root/.bashrc
 
-SHELL ["/bin/bash"]
+COPY natgeo-dams-6e7bc2912661.json /usr/local/natgeo-dams-6e7bc2912661.json
+RUN gcloud auth activate-service-account --key-file=/usr/local/natgeo-dams-6e7bc2912661.json
+RUN gcloud config set project natgeo-dams
+
+RUN apt-get install software-properties-common -y
+RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
+RUN apt-get update -y
+RUN apt-get install -y \
+    build-essential \
+    libspatialindex-c4v5 \
+    emacs \
+    git
+
+RUN pip install --no-cache-dir \
+    Cython \
+    flask \
+    matplotlib \
+    numpy \
+    opencv-python-headless \
+    pillow \
+    Pillow \
+    pyyaml \
+    rtree \
+    scipy \
+    shapely \
+    pypng
+
+RUN apt-get install -y \
+    gdal-bin \
+    libgdal-dev \
+    python3-gdal
+
+RUN apt install -y \
+    libffi-dev \
+    python3-setuptools \
+    gcc \
+    python3-dev
+
+RUN git clone https://github.com/fizyr/keras-retinanet.git /usr/local/keras-retinanet
+WORKDIR /usr/local/keras-retinanet
+RUN pip install . --user
+RUN echo export PATH=$PATH:/root/.local/bin >> /root/.bashrc
+
+RUN pip install \
+    git+https://github.com/richpsharp/ecoshard.git@feature/ECOSHARD-3-download-and-unzip \
+    git+https://github.com/natcap/pygeoprocessing.git@release/2.0
+
+WORKDIR /usr/local/natgeo_dams
+
