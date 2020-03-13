@@ -41,4 +41,6 @@ RUN git clone https://github.com/fizyr/keras-retinanet.git /usr/local/keras-reti
 WORKDIR /usr/local/keras-retinanet
 RUN pip install . --user
 
+RUN pip install pypng
+
 WORKDIR /usr/local/natgeo_dams
