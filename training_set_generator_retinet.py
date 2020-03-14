@@ -1,4 +1,7 @@
 """Tracer code to set up training pipeline."""
+"""
+git pull && docker build dockerfile-dir -f dockerfile-dir/docker-cpu -t natcap/dam-inference-server-cpu:0.0.1 && docker run -it --rm -v `pwd`:/usr/local/natgeo_dams natcap/dam-inference-server-cpu:0.0.1 python "./training_set_generator_retinet.py"
+"""
 import os
 import logging
 import pathlib
