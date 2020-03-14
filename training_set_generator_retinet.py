@@ -189,7 +189,7 @@ def copy_from_gs(gs_uri, target_path):
         os.makedirs(dirpath)
     except Exception:
         pass
-    subprocess.run('gsutil cp %s %s' % (gs_uri, target_path), shell=True)
+    subprocess.run('/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' % (gs_uri, target_path), shell=True)
 
 
 def main():
@@ -201,8 +201,6 @@ def main():
             pass
 
     task_graph = taskgraph.TaskGraph(WORKSPACE_DIR, -1)
-
-    PLANET_QUAD_DAMS_DATABASE_URI
 
     planet_quad_dams_database_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(PLANET_QUAD_DAMS_DATABASE_URI))
