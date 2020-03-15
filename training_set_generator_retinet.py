@@ -138,7 +138,6 @@ def make_training_data(
         FROM bounding_box_to_mosaic
         INNER JOIN quad_id_to_uri ON
             bounding_box_to_mosaic.quad_id = quad_id_to_uri.quad_id
-        WHERE bounding_box_to_mosaic.quad_id='757-890';
         ''', dams_database_path, argument_list=[], fetch='all')
 
     quad_gs_to_png_map = {}
