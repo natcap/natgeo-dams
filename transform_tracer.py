@@ -1,3 +1,5 @@
+import os
+
 import pygeoprocessing
 from osgeo import osr
 
@@ -7,7 +9,10 @@ bb = (
 wgs84_srs = osr.SpatialReference()
 wgs84_srs.ImportFromEPSG(4326)
 
-quad_path = r"C:\Users\richp\Documents\code_repos\natgeo-dams\training_set_workspace\training_imagery\4ce5863a-fb3f-4cad-a899-b8c053af1858_757-890.tif"
+quad_path = os.path.join(
+    'training_set_workspace',
+    'training_imagery',
+    '4ce5863a-fb3f-4cad-a899-b8c053af1858_757-890.tif')
 
 quad_info = pygeoprocessing.get_raster_info(quad_path)
 
