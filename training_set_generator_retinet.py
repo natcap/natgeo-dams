@@ -1,7 +1,4 @@
 """Tracer code to set up training pipeline."""
-"""
-git pull && docker build dockerfile-dir -f dockerfile-dir/docker-cpu -t natcap/dam-inference-server-cpu:0.0.1 && docker run -it --rm -v `pwd`:/usr/local/natgeo_dams natcap/dam-inference-server-cpu:0.0.1 python "./training_set_generator_retinet.py"
-"""
 import os
 import logging
 import pathlib
@@ -18,6 +15,11 @@ import png
 import requests
 import retrying
 import taskgraph
+
+"""
+git pull && docker build dockerfile-dir -f dockerfile-dir/docker-cpu -t natcap/dam-inference-server-cpu:0.0.1 && docker run -it --rm -v `pwd`:/usr/local/natgeo_dams natcap/dam-inference-server-cpu:0.0.1 python "./training_set_generator_retinet.py"
+"""
+
 
 WORKSPACE_DIR = 'training_set_workspace'
 ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
@@ -146,6 +148,7 @@ def make_training_data(
 
     for (bounding_box_pickled, quad_uri) in result:
         bounding_box = pickle.loads(bounding_box_pickled)
+        # lng_min, lat_min, lng_max, lat_max
         quad_raster_path = os.path.join(
             imagery_dir, os.path.basename(quad_uri))
         if quad_raster_path not in quad_gs_to_png_map:
@@ -173,13 +176,14 @@ def make_training_data(
         quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
         inv_gt = gdal.InvGeoTransform(
             quad_info['geotransform'])
-        ul_i, ul_j = gdal.ApplyGeoTransform(
-            inv_gt, bounding_box[0], bounding_box[1])
-        lr_i, lr_j = gdal.ApplyGeoTransform(
-            inv_gt, bounding_box[2], bounding_box[3])
+        ul_i, ul_j = [int(x) for x in gdal.ApplyGeoTransform(
+            inv_gt, bounding_box[0], bounding_box[1])]
+        lr_i, lr_j = [int(x) for x in gdal.ApplyGeoTransform(
+            inv_gt, bounding_box[2], bounding_box[3])]
         annotations_csv_file.write(
-            '%s,%d,%d,%d,%d,dam\n' % (
-                quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j))
+            '%s,%d,%d,%d,%d,dam,%s\n' % (
+                quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j,
+                str(bounding_box)))
     task_graph.join()
 
     annotations_csv_file.close()
