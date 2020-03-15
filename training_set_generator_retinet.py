@@ -185,9 +185,9 @@ def make_training_data(
 
         inv_gt = gdal.InvGeoTransform(quad_info['geotransform'])
         ul_i, ul_j = [int(x) for x in gdal.ApplyGeoTransform(
-            inv_gt, local_bb[0], local_bb[1])]
+            inv_gt, local_bb[1], local_bb[0])]
         lr_i, lr_j = [int(x) for x in gdal.ApplyGeoTransform(
-            inv_gt, local_bb[2], local_bb[3])]
+            inv_gt, local_bb[3], local_bb[2])]
         annotations_csv_file.write(
             '%s,%d,%d,%d,%d,dam,%s,%s\n' % (
                 quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j,
