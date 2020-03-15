@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 import sys
 
+from osgeo import osr
 from osgeo import gdal
 import ecoshard
 import numpy
@@ -146,6 +147,9 @@ def make_training_data(
         classes_csv_file.write('dam,0\n')
     annotations_csv_file = open(annotations_csv_path, 'w')
 
+    bb_srs = osr.SpatialReference()
+    bb_srs.ImportFromWkt(4326)
+
     for (bounding_box_pickled, quad_uri) in result:
         bounding_box = pickle.loads(bounding_box_pickled)
         # lng_min, lat_min, lng_max, lat_max
@@ -173,17 +177,23 @@ def make_training_data(
             png.from_array(image_2d, 'RGBA').save(quad_png_path)
             quad_gs_to_png_map[quad_raster_path] = quad_png_path
 
+        # convert lat/lng bounding box to quad SRS bounding box
+        target_info = pygeoprocessing.get_raster_info(quad_raster_path)
+        local_bb = pygeoprocessing.transform_bounding_box(
+            bounding_box, bb_srs.ExporToWkt(),
+            target_info['projection'], edge_samples=11)
+
         quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
         inv_gt = gdal.InvGeoTransform(
             quad_info['geotransform'])
         ul_i, ul_j = [int(x) for x in gdal.ApplyGeoTransform(
-            inv_gt, bounding_box[0], bounding_box[1])]
+            inv_gt, local_bb[0], local_bb[1])]
         lr_i, lr_j = [int(x) for x in gdal.ApplyGeoTransform(
-            inv_gt, bounding_box[2], bounding_box[3])]
+            inv_gt, local_bb[2], local_bb[3])]
         annotations_csv_file.write(
             '%s,%d,%d,%d,%d,dam,%s\n' % (
                 quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j,
-                str(bounding_box)))
+                str(local_bb)))
     task_graph.join()
 
     annotations_csv_file.close()
