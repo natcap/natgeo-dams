@@ -1,6 +1,7 @@
 """Tracer code to set up training pipeline."""
 import os
 import logging
+import multiprocessing
 import pathlib
 import pickle
 import sqlite3
@@ -9,11 +10,9 @@ import sys
 
 from osgeo import osr
 from osgeo import gdal
-import ecoshard
 import numpy
 import pygeoprocessing
 import png
-import requests
 import retrying
 import taskgraph
 
@@ -130,7 +129,7 @@ def make_training_data(
         None
 
     """
-    result = _execute_sqlite(
+    bounding_box_quad_uri_list = _execute_sqlite(
         '''
         SELECT
             bounding_box,
@@ -149,32 +148,25 @@ def make_training_data(
     bb_srs = osr.SpatialReference()
     bb_srs.ImportFromEPSG(4326)
 
-    for (bounding_box_pickled, quad_uri) in result:
-        bounding_box = pickle.loads(bounding_box_pickled)
-        # lng_min, lat_min, lng_max, lat_max
+    # download & process all quads first
+    for (_, quad_uri) in bounding_box_quad_uri_list:
         quad_raster_path = os.path.join(
             imagery_dir, os.path.basename(quad_uri))
-        if quad_raster_path not in quad_gs_to_png_map:
-            download_task = task_graph.add_task(
-                func=copy_from_gs,
-                args=(quad_uri, quad_raster_path),
-                task_name='download quad %s' % quad_uri,
-                target_path_list=[quad_raster_path])
-            download_task.join()
-            raster = gdal.OpenEx(quad_raster_path, gdal.OF_RASTER)
-            quad_png_path = '%s.png' % os.path.splitext(quad_raster_path)[0]
-            raster_array = raster.ReadAsArray()
-            LOGGER.debug(raster_array.shape)
+        quad_png_path = '%s.png' % os.path.splitext(quad_raster_path)[0]
 
-            row_count, col_count = raster_array.shape[1::]
-            image_2d = numpy.transpose(
-                raster_array, axes=[0, 2, 1]).reshape(
-                (-1,), order='F').reshape((-1, col_count*4))
-            LOGGER.debug(image_2d)
-            LOGGER.debug(image_2d.shape)
-            LOGGER.debug(image_2d.dtype)
-            png.from_array(image_2d, 'RGBA').save(quad_png_path)
-            quad_gs_to_png_map[quad_raster_path] = quad_png_path
+        if quad_uri not in quad_gs_to_png_map:
+            download_task = task_graph.add_task(
+                func=make_quad_png,
+                args=(quad_uri, quad_raster_path, quad_png_path),
+                target_path_list=[quad_raster_path, quad_png_path],
+                task_name='make quad png %s' % quad_png_path)
+            quad_gs_to_png_map[quad_uri] = (quad_png_path, download_task)
+
+    for (bounding_box_pickled, quad_uri) in bounding_box_quad_uri_list:
+        # lng_min, lat_min, lng_max, lat_max
+        bounding_box = pickle.loads(bounding_box_pickled)
+        quad_raster_path, download_task = quad_gs_to_png_map[quad_uri]
+        download_task.join()
 
         # convert lat/lng bounding box to quad SRS bounding box
         quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
@@ -192,8 +184,6 @@ def make_training_data(
         annotations_csv_file.write(
             '%s,%d,%d,%d,%d,dam\n' % (
                 quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j))
-    task_graph.join()
-
     annotations_csv_file.close()
 
 
@@ -215,7 +205,8 @@ def main():
         except OSError:
             pass
 
-    task_graph = taskgraph.TaskGraph(WORKSPACE_DIR, -1)
+    task_graph = taskgraph.TaskGraph(
+        WORKSPACE_DIR, multiprocessing.cpu_count(), 5.0)
 
     planet_quad_dams_database_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(PLANET_QUAD_DAMS_DATABASE_URI))
@@ -231,6 +222,32 @@ def main():
     make_training_data(
         task_graph, planet_quad_dams_database_path,
         TRAINING_IMAGERY_DIR, ANNOTATIONS_CSV_PATH, CLASSES_CSV_PATH)
+
+    task_graph.close()
+    task_graph.join()
+
+
+def make_quad_png(quad_uri, quad_raster_path, quad_png_path):
+    """Make a PNG out of a geotiff.
+
+    Parameters:
+        quad_uri (str): uri to GS bucket to dowload tif.
+        quad_raster_path (str): path to target download location.
+        quad_png_path (str): path to target png file.
+
+    Returns:
+        None.
+
+    """
+    copy_from_gs(quad_uri, quad_raster_path)
+    raster = gdal.OpenEx(quad_raster_path, gdal.OF_RASTER)
+    raster_array = raster.ReadAsArray()
+    row_count, col_count = raster_array.shape[1::]
+    image_2d = numpy.transpose(
+        raster_array, axes=[0, 2, 1]).reshape(
+        (-1,), order='F').reshape((-1, col_count*4))
+    png.from_array(image_2d, 'RGBA').save(quad_png_path)
+    return quad_png_path
 
 
 if __name__ == '__main__':
