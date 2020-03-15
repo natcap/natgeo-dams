@@ -24,8 +24,8 @@ git pull && docker build dockerfile-dir -f dockerfile-dir/docker-cpu -t natcap/d
 
 WORKSPACE_DIR = 'training_set_workspace'
 ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
-ANNOTATIONS_CSV_PATH = os.path.join(WORKSPACE_DIR, 'annotations.csv')
-CLASSES_CSV_PATH = os.path.join(WORKSPACE_DIR, 'classes.csv')
+ANNOTATIONS_CSV_PATH = os.path.join('.', 'annotations.csv')
+CLASSES_CSV_PATH = os.path.join('.', 'classes.csv')
 TRAINING_IMAGERY_DIR = os.path.join(WORKSPACE_DIR, 'training_imagery')
 PLANET_QUAD_DAMS_DATABASE_URI = (
     'gs://natgeo-dams-data/databases/'
