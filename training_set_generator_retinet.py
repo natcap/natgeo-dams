@@ -180,7 +180,7 @@ def make_training_data(
         # convert lat/lng bounding box to quad SRS bounding box
         target_info = pygeoprocessing.get_raster_info(quad_raster_path)
         local_bb = pygeoprocessing.transform_bounding_box(
-            bounding_box, bb_srs.ExporToWkt(),
+            bounding_box, bb_srs.ExportToWkt(),
             target_info['projection'], edge_samples=11)
 
         quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
