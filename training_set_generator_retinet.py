@@ -148,7 +148,7 @@ def make_training_data(
     annotations_csv_file = open(annotations_csv_path, 'w')
 
     bb_srs = osr.SpatialReference()
-    bb_srs.ImportFromWkt(4326)
+    bb_srs.ImportFromEPSG(4326)
 
     for (bounding_box_pickled, quad_uri) in result:
         bounding_box = pickle.loads(bounding_box_pickled)
