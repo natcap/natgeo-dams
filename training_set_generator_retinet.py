@@ -178,12 +178,11 @@ def make_training_data(
             quad_gs_to_png_map[quad_raster_path] = quad_png_path
 
         # convert lat/lng bounding box to quad SRS bounding box
-        target_info = pygeoprocessing.get_raster_info(quad_raster_path)
+        quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
         local_bb = pygeoprocessing.transform_bounding_box(
             bounding_box, bb_srs.ExportToWkt(),
-            target_info['projection'], edge_samples=11)
+            quad_info['projection'], edge_samples=11)
 
-        quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
         inv_gt = gdal.InvGeoTransform(
             quad_info['geotransform'])
         ul_i, ul_j = [int(x) for x in gdal.ApplyGeoTransform(
@@ -191,9 +190,9 @@ def make_training_data(
         lr_i, lr_j = [int(x) for x in gdal.ApplyGeoTransform(
             inv_gt, local_bb[2], local_bb[3])]
         annotations_csv_file.write(
-            '%s,%d,%d,%d,%d,dam,%s\n' % (
+            '%s,%d,%d,%d,%d,dam,%s,%s\n' % (
                 quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j,
-                str(local_bb)))
+                str(bounding_box), str(local_bb)))
     task_graph.join()
 
     annotations_csv_file.close()
