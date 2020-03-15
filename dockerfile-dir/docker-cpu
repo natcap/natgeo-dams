@@ -58,6 +58,6 @@ RUN pip install . --user
 RUN echo export PATH=\$PATH:/root/.local/bin >> /root/.bashrc
 
 RUN pip install git+https://github.com/natcap/pygeoprocessing.git@release/2.0
-RUN pip git+https://github.com/richpsharp/ecoshard.git@feature/ECOSHARD-3-download-and-unzip
+RUN pip install git+https://github.com/richpsharp/ecoshard.git@feature/ECOSHARD-3-download-and-unzip
 
 WORKDIR /usr/local/natgeo_dams
