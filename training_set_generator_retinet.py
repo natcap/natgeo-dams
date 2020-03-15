@@ -189,9 +189,8 @@ def make_training_data(
         lr_i, lr_j = [int(x) for x in gdal.ApplyGeoTransform(
             inv_gt, local_bb[2], local_bb[3])]
         annotations_csv_file.write(
-            '%s,%d,%d,%d,%d,dam,%s,%s\n' % (
-                quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j,
-                str(bounding_box), str(local_bb)))
+            '%s,%d,%d,%d,%d,dam\n' % (
+                quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j))
     task_graph.join()
 
     annotations_csv_file.close()
