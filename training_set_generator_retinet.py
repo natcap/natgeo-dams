@@ -324,16 +324,16 @@ def process_quad(quad_uri, quad_id, dams_database_path):
     quad_slice_index = 0
     annotation_string_list = []
     for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
-        xwin_size = TRAINING_IMAGE_DIMS[0]
-        if xoff + xwin_size >= n_cols:
-            xoff = n_cols-xwin_size-1
+        win_xsize = TRAINING_IMAGE_DIMS[0]
+        if xoff + win_xsize >= n_cols:
+            xoff = n_cols-win_xsize-1
         for yoff in range(0, n_rows, TRAINING_IMAGE_DIMS[1]):
-            ywin_size = TRAINING_IMAGE_DIMS[1]
-            if yoff + ywin_size >= n_rows:
-                yoff = n_rows-ywin_size-1
+            win_ysize = TRAINING_IMAGE_DIMS[1]
+            if yoff + win_ysize >= n_rows:
+                yoff = n_rows-win_ysize-1
 
             bb_indexes = list(bounding_box_rtree.intersection(
-                (xoff, yoff, xoff+xwin_size, yoff+ywin_size)))
+                (xoff, yoff, xoff+win_xsize, yoff+win_ysize)))
             if bb_indexes:
                 LOGGER.debug(
                     'these local bbs at %d %d: %s', xoff, yoff,
@@ -345,7 +345,7 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                 quad_slice_index += 1
                 make_quad_png(
                     quad_raster_path, quad_png_path,
-                    xoff, yoff, xwin_size, ywin_size)
+                    xoff, yoff, win_xsize, win_ysize)
                 # transform local bbs so they're relative to the png
                 for bb_index in bb_indexes:
                     base_bb = index_to_bb_map[bb_index]
@@ -425,7 +425,7 @@ def main():
 
 
 def make_quad_png(
-        quad_raster_path, quad_png_path, xoff, yoff, xwin_size, ywin_size):
+        quad_raster_path, quad_png_path, xoff, yoff, win_xsize, win_ysize):
     """Make a PNG out of a geotiff.
 
     Parameters:
@@ -433,8 +433,8 @@ def make_quad_png(
         quad_png_path (str): path to target png file.
         xoff (int): x offset to read quad array
         yoff (int): y offset to read quad array
-        xwin_size (int): size of x window
-        ywin_size (int): size of y window
+        win_xsize (int): size of x window
+        win_ysize (int): size of y window
 
     Returns:
         None.
@@ -442,7 +442,7 @@ def make_quad_png(
     """
     raster = gdal.OpenEx(quad_raster_path, gdal.OF_RASTER)
     raster_array = raster.ReadAsArray(
-        xoff=xoff, yoff=yoff, xwin_size=xwin_size, ywin_size=ywin_size)
+        xoff=xoff, yoff=yoff, win_xsize=win_xsize, win_ysize=win_ysize)
     row_count, col_count = raster_array.shape[1::]
     image_2d = numpy.transpose(
         raster_array, axes=[0, 2, 1]).reshape(
