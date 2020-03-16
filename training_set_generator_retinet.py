@@ -291,6 +291,7 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         WHERE quad_id=?
         ''', dams_database_path, argument_list=[quad_id], fetch='all')
     bounding_box_rtree = rtree.index.Index()
+    index_to_bb_map = {}
     for index, (bounding_box_blob,) in enumerate(bounding_box_blob_list):
         bounding_box = pickle.loads(bounding_box_blob)
         LOGGER.debug('%s: %s', quad_uri, bounding_box)
@@ -308,11 +309,14 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         ul_j, lr_j = sorted([ul_j, lr_j])
 
         dam_bb = [ul_i, ul_j, lr_i, lr_j]
+        index_to_bb_map[index] = dam_bb
         LOGGER.debug('going to insert this: %s', str((index, dam_bb)))
-        bounding_box_rtree.insert(index, [ul_i, ul_j, lr_i, lr_j])
+        bounding_box_rtree.insert(index, dam_bb)
 
     quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
     n_cols, n_rows = quad_info['raster_size']
+    quad_slice_index = 0
+    annotation_string_list = []
     for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
         xwin_size = TRAINING_IMAGE_DIMS[0]
         if xoff + xwin_size >= n_cols:
@@ -328,12 +332,25 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                 LOGGER.debug(
                     'these local bbs at %d %d: %s', xoff, yoff,
                     str(bb_indexes))
-                create_png_from_geotiff(
-                    quad_raster_path, xoff, yoff, xwin_size, ywin_size)
-
-                # TODO: clip out the png
-                # TODO: transform local bbs so they're relative to the png
+                # clip out the png
+                quad_png_path = os.path.join(
+                    TRAINING_IMAGERY_DIR, '%s_%d.png' % (
+                        quad_id, quad_slice_index))
+                quad_slice_index += 1
+                make_quad_png(
+                    quad_raster_path, quad_png_path,
+                    xoff, yoff, xwin_size, ywin_size)
+                # transform local bbs so they're relative to the png
+                for bb_index in bb_indexes:
+                    base_bb = index_to_bb_map[bb_index]
+                    base_bb[0] -= xoff
+                    base_bb[1] -= yoff
+                    base_bb[2] -= xoff
+                    base_bb[3] -= yoff
                 # TODO: update the database with the annotations
+                annotation_string_list = '%d,%d,%d,%d,%s' % (
+                    base_bb[0], base_bb[1], base_bb[2], base_bb[3],
+                    quad_png_path)
 
     #os.remove(quad_raster_path)
     task_graph.join()
@@ -392,21 +409,25 @@ def main():
     task_graph.join()
 
 
-def make_quad_png(quad_uri, quad_raster_path, quad_png_path):
+def make_quad_png(
+        quad_raster_path, quad_png_path, xoff, yoff, xwin_size, ywin_size):
     """Make a PNG out of a geotiff.
 
     Parameters:
-        quad_uri (str): uri to GS bucket to dowload tif.
         quad_raster_path (str): path to target download location.
         quad_png_path (str): path to target png file.
+        xoff (int): x offset to read quad array
+        yoff (int): y offset to read quad array
+        xwin_size (int): size of x window
+        ywin_size (int): size of y window
 
     Returns:
         None.
 
     """
-    copy_from_gs(quad_uri, quad_raster_path)
     raster = gdal.OpenEx(quad_raster_path, gdal.OF_RASTER)
-    raster_array = raster.ReadAsArray()
+    raster_array = raster.ReadAsArray(
+        xoff=xoff, yoff=yoff, xwin_size=xwin_size, ywin_size=ywin_size)
     row_count, col_count = raster_array.shape[1::]
     image_2d = numpy.transpose(
         raster_array, axes=[0, 2, 1]).reshape(
