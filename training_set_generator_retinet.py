@@ -80,7 +80,7 @@ def create_status_database(quads_database_path, target_status_database_path):
             quad_uri TEXT NOT NULL,
             bounding_box BLOB NOT NULL);
 
-        CREATE UNIQUE INDEX quad_bounding_box_uri_table_quad_id
+        CREATE INDEX quad_bounding_box_uri_table_quad_id
         ON quad_bounding_box_uri_table (quad_id);
 
         CREATE TABLE quad_processing_status (
