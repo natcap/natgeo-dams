@@ -307,7 +307,8 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         ul_i, lr_i = sorted([ul_i, lr_i])
         ul_j, lr_j = sorted([ul_j, lr_j])
 
-        LOGGER.debug('going to insert this: %s', str((index, [ul_i, ul_j, lr_i, lr_j])))
+        dam_bb = [ul_i, ul_j, lr_i, lr_j]
+        LOGGER.debug('going to insert this: %s', str((index, dam_bb)))
         bounding_box_rtree.insert(index, [ul_i, ul_j, lr_i, lr_j])
 
     quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
@@ -321,11 +322,15 @@ def process_quad(quad_uri, quad_id, dams_database_path):
             if yoff + ywin_size >= n_rows:
                 yoff = n_rows-ywin_size-1
 
-            local_bbs = list(bounding_box_rtree.intersection(
+            bb_indexes = list(bounding_box_rtree.intersection(
                 (xoff, yoff, xoff+xwin_size, yoff+ywin_size)))
-            if local_bbs:
+            if bb_indexes:
                 LOGGER.debug(
-                    'these local bbs at %d %d: %s', xoff, yoff, str(local_bbs))
+                    'these local bbs at %d %d: %s', xoff, yoff,
+                    str(bb_indexes))
+                create_png_from_geotiff(
+                    quad_raster_path, xoff, yoff, xwin_size, ywin_size)
+
                 # TODO: clip out the png
                 # TODO: transform local bbs so they're relative to the png
                 # TODO: update the database with the annotations
