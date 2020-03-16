@@ -80,9 +80,15 @@ def create_status_database(quads_database_path, target_status_database_path):
             quad_uri TEXT NOT NULL,
             bounding_box BLOB NOT NULL);
 
+        CREATE UNIQUE INDEX quad_bounding_box_uri_table_quad_id
+        ON quad_bounding_box_uri_table (quad_id);
+
         CREATE TABLE quad_processing_status (
-            quad_id TEXT NOT NULL,
+            quad_id TEXT PRIMARY KEY,
             processed INT NOT NULL);
+
+        CREATE TABLE annotation_table (
+            record TEXT PRIMARY KEY);
         """)
     if os.path.exists(target_status_database_path):
         os.remove(target_status_database_path)
@@ -347,12 +353,21 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                     base_bb[1] -= yoff
                     base_bb[2] -= xoff
                     base_bb[3] -= yoff
-                # TODO: update the database with the annotations
-                annotation_string_list = '%d,%d,%d,%d,%s' % (
-                    base_bb[0], base_bb[1], base_bb[2], base_bb[3],
-                    quad_png_path)
+                annotation_string_list.append(
+                    ['%d,%d,%d,%d,%s' % (
+                        base_bb[0], base_bb[1], base_bb[2], base_bb[3],
+                        quad_png_path)])
 
-    #os.remove(quad_raster_path)
+    LOGGER.debug('updating annotation table')
+    _execute_sqlite(
+        '''
+        INSERT OR REPLACE INTO annotation_table
+            (record)
+        VALUES (?);
+        ''', dams_database_path,
+        argument_list=annotation_string_list, execute='many')
+
+    #TODO: os.remove(quad_raster_path)
     task_graph.join()
     task_graph.close()
 
