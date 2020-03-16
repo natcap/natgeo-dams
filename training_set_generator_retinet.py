@@ -37,7 +37,7 @@ logging.basicConfig(
             '%(name)s [%(funcName)s:%(lineno)d] %(message)s'),
         stream=sys.stdout)
 LOGGER = logging.getLogger(__name__)
-
+logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def _execute_sqlite(
