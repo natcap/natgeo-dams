@@ -160,12 +160,14 @@ def make_training_data(
                 args=(quad_uri, quad_raster_path, quad_png_path),
                 target_path_list=[quad_raster_path, quad_png_path],
                 task_name='make quad png %s' % quad_png_path)
-            quad_gs_to_png_map[quad_uri] = (quad_png_path, download_task)
+            quad_gs_to_png_map[quad_uri] = (
+                quad_raster_path, quad_png_path, download_task)
 
     for (bounding_box_pickled, quad_uri) in bounding_box_quad_uri_list:
         # lng_min, lat_min, lng_max, lat_max
         bounding_box = pickle.loads(bounding_box_pickled)
-        quad_raster_path, download_task = quad_gs_to_png_map[quad_uri]
+        quad_raster_path, quad_png_path, download_task = \
+            quad_gs_to_png_map[quad_uri]
         download_task.join()
 
         # convert lat/lng bounding box to quad SRS bounding box
