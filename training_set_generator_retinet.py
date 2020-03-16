@@ -185,8 +185,7 @@ def make_training_data(
         ul_i, lr_i = sorted([ul_i, lr_i])
         ul_j, lr_j = sorted([ul_j, lr_j])
         annotations_csv_file.write(
-            '%s,%d,%d,%d,%d,dam\n' % (
-                quad_gs_to_png_map[quad_raster_path], ul_i, ul_j, lr_i, lr_j))
+            '%s,%d,%d,%d,%d,dam\n' % (quad_png_path, ul_i, ul_j, lr_i, lr_j))
     annotations_csv_file.close()
 
 
