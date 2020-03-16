@@ -38,8 +38,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format=(
         '%(asctime)s (%(relativeCreated)d) %(processName)s %(levelname)s '
-        '%(name)s [%(funcName)s:%(lineno)d] %(message)s'),
-    filename='log.txt')
+        '%(name)s [%(funcName)s:%(lineno)d] %(message)s'))
 LOGGER = logging.getLogger(__name__)
 logging.getLogger('taskgraph').setLevel(logging.INFO)
 
@@ -61,13 +60,16 @@ def create_status_database(quads_database_path, target_status_database_path):
     bounding_box_quad_uri_list = _execute_sqlite(
         '''
         SELECT
-            quad_id, quad_id_to_uri.quad_uri, bounding_box
+            bounding_box_to_mosaic.quad_id,
+            quad_id_to_uri.quad_uri,
+            bounding_box
         FROM bounding_box_to_mosaic
         INNER JOIN quad_id_to_uri ON
             bounding_box_to_mosaic.quad_id = quad_id_to_uri.quad_id
         ''', quads_database_path, argument_list=[], fetch='all')
 
-    quad_id_set = set([[x[0]] for x in bounding_box_quad_uri_list])
+    quad_id_list = [
+        [y] for y in set([x[0] for x in bounding_box_quad_uri_list])]
 
     # processed quads table
     # annotations
@@ -102,7 +104,7 @@ def create_status_database(quads_database_path, target_status_database_path):
         "quad_processing_status (quad_id, processed) "
         "VALUES (?, 0);",
         target_status_database_path,
-        argument_list=quad_id_set, mode='modify', execute='many')
+        argument_list=quad_id_list, mode='modify', execute='many')
 
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
@@ -195,15 +197,14 @@ def make_training_data(
         None
 
     """
-
     # get all the quad_ids
-
     quad_id_uris_to_process = _execute_sqlite(
         '''
         SELECT
-            quad_id, quad_bounding_box_uri_table.quad_uri
+            quad_bounding_box_uri_table.quad_id,
+            quad_bounding_box_uri_table.quad_uri
         FROM quad_processing_status
-        INNER JOIN
+        INNER JOIN quad_bounding_box_uri_table ON
             quad_processing_status.quad_id=quad_bounding_box_uri_table.quad_id
         WHERE processed=0
         ''', dams_database_path, argument_list=[], fetch='all')
@@ -213,8 +214,10 @@ def make_training_data(
             func=process_quad,
             args=(quad_uri, quad_id, dams_database_path),
             task_name='process quad %s' % quad_id)
-
+        break
+    task_graph.close()
     task_graph.join()
+    sys.exit(0)
 
     with open(classes_csv_path, 'w') as classes_csv_file:
         classes_csv_file.write('dam,0\n')
@@ -266,9 +269,15 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         True when complete.
 
     """
+    task_graph = taskgraph.TaskGraph(WORKSPACE_DIR, -1)
     quad_raster_path = os.path.join(
         TRAINING_IMAGERY_DIR, os.path.basename(quad_uri))
-    copy_from_gs(quad_uri, quad_raster_path)
+    download_quad_task = task_graph.add_task(
+        func=copy_from_gs,
+        args=(quad_uri, quad_raster_path),
+        target_path_list=[quad_raster_path],
+        task_name='download %s' % quad_uri)
+    download_quad_task.join()
     quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
 
     # extract the bounding boxes
@@ -284,6 +293,7 @@ def process_quad(quad_uri, quad_id, dams_database_path):
     bounding_box_rtree = rtree.index.Index()
     for index, bounding_box_blob in enumerate(bounding_box_blob_list):
         bounding_box = pickle.loads(bounding_box_blob)
+        LOGGER.debug('%s: %s', quad_uri, bounding_box)
 
         local_bb = pygeoprocessing.transform_bounding_box(
             bounding_box, bb_srs.ExportToWkt(),
@@ -297,6 +307,7 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         ul_i, lr_i = sorted([ul_i, lr_i])
         ul_j, lr_j = sorted([ul_j, lr_j])
 
+        LOGGER.debug('going to insert this: %s', str((index, [ul_i, ul_j, lr_i, lr_j])))
         bounding_box_rtree.insert(index, [ul_i, ul_j, lr_i, lr_j])
 
     quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
@@ -313,12 +324,14 @@ def process_quad(quad_uri, quad_id, dams_database_path):
             local_bbs = list(bounding_box_rtree.intersection(
                 xoff, yoff, xoff+xwin_size, yoff+ywin_size))
             if local_bbs:
-                pass
+                LOGGER.debug('these local bbs at %d %d: %s', xoff, yoff, str(local_bbs))
                 # TODO: clip out the png
                 # TODO: transform local bbs so they're relative to the png
                 # TODO: update the database with the annotations
 
-    os.remove(quad_raster_path)
+    #os.remove(quad_raster_path)
+    task_graph.join()
+    task_graph.close()
 
 
 def copy_from_gs(gs_uri, target_path):
@@ -329,7 +342,8 @@ def copy_from_gs(gs_uri, target_path):
     except Exception:
         pass
     subprocess.run(
-        '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
+        #'/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
+        'gsutil cp %s %s' %
         (gs_uri, target_path), shell=True)
 
 
@@ -343,7 +357,7 @@ def main():
             pass
 
     task_graph = taskgraph.TaskGraph(
-        WORKSPACE_DIR, multiprocessing.cpu_count(), 5.0)
+        WORKSPACE_DIR, -1, 5.0)
 
     planet_quad_dams_database_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(PLANET_QUAD_DAMS_DATABASE_URI))
