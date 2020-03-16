@@ -365,7 +365,7 @@ def process_quad(quad_uri, quad_id, dams_database_path):
             (record)
         VALUES (?);
         ''', dams_database_path,
-        argument_list=annotation_string_list, execute='many')
+        argument_list=annotation_string_list, execute='many', mode='modify')
 
     #TODO: os.remove(quad_raster_path)
     task_graph.join()
@@ -441,11 +441,16 @@ def make_quad_png(
 
     """
     raster = gdal.OpenEx(quad_raster_path, gdal.OF_RASTER)
-    raster_array = raster.ReadAsArray(
-        xoff=xoff, yoff=yoff, win_xsize=win_xsize, win_ysize=win_ysize)
-    row_count, col_count = raster_array.shape[1::]
+    rgba_array = numpy.array([
+        raster.GetRasterBand(i).ReadAsArray(
+            xoff=xoff, yoff=yoff, win_xsize=win_xsize, win_ysize=win_ysize)
+        for i in [1, 2, 3, 4]])
+
+    LOGGER.debug(rgba_array)
+    LOGGER.debug(rgba_array.shape)
+    row_count, col_count = rgba_array.shape[1::]
     image_2d = numpy.transpose(
-        raster_array, axes=[0, 2, 1]).reshape(
+        rgba_array, axes=[0, 2, 1]).reshape(
         (-1,), order='F').reshape((-1, col_count*4))
     png.from_array(image_2d, 'RGBA').save(quad_png_path)
     return quad_png_path
