@@ -291,7 +291,7 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         WHERE quad_id=?
         ''', dams_database_path, argument_list=[quad_id], fetch='all')
     bounding_box_rtree = rtree.index.Index()
-    for index, bounding_box_blob in enumerate(bounding_box_blob_list):
+    for index, (bounding_box_blob,) in enumerate(bounding_box_blob_list):
         bounding_box = pickle.loads(bounding_box_blob)
         LOGGER.debug('%s: %s', quad_uri, bounding_box)
 
@@ -322,9 +322,10 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                 yoff = n_rows-ywin_size-1
 
             local_bbs = list(bounding_box_rtree.intersection(
-                xoff, yoff, xoff+xwin_size, yoff+ywin_size))
+                (xoff, yoff, xoff+xwin_size, yoff+ywin_size)))
             if local_bbs:
-                LOGGER.debug('these local bbs at %d %d: %s', xoff, yoff, str(local_bbs))
+                LOGGER.debug(
+                    'these local bbs at %d %d: %s', xoff, yoff, str(local_bbs))
                 # TODO: clip out the png
                 # TODO: transform local bbs so they're relative to the png
                 # TODO: update the database with the annotations
