@@ -256,7 +256,8 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         True when complete.
 
     """
-    task_graph = taskgraph.TaskGraph(WORKSPACE_DIR, -1)
+    task_graph = taskgraph.TaskGraph(
+        WORKSPACE_DIR, multiprocessing.cpu_count())
     quad_raster_path = os.path.join(
         TRAINING_IMAGERY_DIR, os.path.basename(quad_uri))
     download_quad_task = task_graph.add_task(
