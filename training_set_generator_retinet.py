@@ -357,10 +357,9 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         WHERE quad_id=?
         ''', dams_database_path, argument_list=[quad_id], mode='modify')
 
-
-    #TODO: os.remove(quad_raster_path)
     task_graph.join()
     task_graph.close()
+    os.remove(quad_raster_path)
 
 
 def copy_from_gs(gs_uri, target_path):
