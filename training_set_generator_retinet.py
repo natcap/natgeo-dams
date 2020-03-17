@@ -297,8 +297,21 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         ul_i, lr_i = sorted([ul_i, lr_i])
         ul_j, lr_j = sorted([ul_j, lr_j])
 
+        # possible the dam may lie outside of the quad, if so clip to the
+        # edge of the quad
+        if ul_j < 0:
+            ul_j = 0
+        if ul_i < 0:
+            ul_i = 0
+        if lr_i >= n_cols:
+            lr_i = n_cols - 1
+        if lr_j >= n_rows:
+            lr_j = n_rows - 1
+
         dam_bb = [ul_i, ul_j, lr_i, lr_j]
-        if ul_i < 0 or ul_j < 0 or lr_i >= n_cols or lr_j >= n_rows:
+
+        # this is a sanity check
+        if ul_i >= n_cols or ul_j >= n_rows or lr_i < 0 or lr_j < 0:
             raise ValueError(
                 'transformed coordinates outside of raster bounds: '
                 'lat/lng: %s\nlocal: %sraster_bb: %s\ntransformed: %s' % (
