@@ -435,15 +435,18 @@ def make_quad_png(
         raster.GetRasterBand(i).ReadAsArray(
             xoff=xoff, yoff=yoff, win_xsize=win_xsize, win_ysize=win_ysize)
         for i in [1, 2, 3, 4]])
-
-    LOGGER.debug(rgba_array)
-    LOGGER.debug(rgba_array.shape)
-    row_count, col_count = rgba_array.shape[1::]
-    image_2d = numpy.transpose(
-        rgba_array, axes=[0, 2, 1]).reshape(
-        (-1,), order='F').reshape((-1, col_count*4))
-    png.from_array(image_2d, 'RGBA').save(quad_png_path)
-    return quad_png_path
+    try:
+        row_count, col_count = rgba_array.shape[1::]
+        image_2d = numpy.transpose(
+            rgba_array, axes=[0, 2, 1]).reshape(
+            (-1,), order='F').reshape((-1, col_count*4))
+        png.from_array(image_2d, 'RGBA').save(quad_png_path)
+        return quad_png_path
+    except Exception:
+        LOGGER.exception(
+            'error on %s generate png with array:\n%s\ndims:%s' % (
+                quad_raster_path, rgba_array, rgba_array.shape))
+        raise
 
 
 if __name__ == '__main__':
