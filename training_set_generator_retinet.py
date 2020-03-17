@@ -444,8 +444,10 @@ def make_quad_png(
         return quad_png_path
     except Exception:
         LOGGER.exception(
-            'error on %s generate png with array:\n%s\ndims:%s' % (
-                quad_raster_path, rgba_array, rgba_array.shape))
+            'error on %s generate png with array:\n%s\ndims:%s\n'
+            'file exists:%s' % (
+                quad_raster_path, rgba_array, rgba_array.shape,
+                os.path.exists(quad_raster_path)))
         raise
 
 
