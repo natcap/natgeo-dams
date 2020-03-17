@@ -359,8 +359,7 @@ def copy_from_gs(gs_uri, target_path):
     except Exception:
         pass
     subprocess.run(
-        #'/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
-        'gsutil cp %s %s' %
+        '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
         (gs_uri, target_path), shell=True)
 
 
