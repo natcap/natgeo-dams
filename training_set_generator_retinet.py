@@ -219,46 +219,25 @@ def make_training_data(
         _ = task_graph.add_task(
             func=process_quad,
             args=(quad_uri, quad_id, dams_database_path),
+            ignore_path_list=[dams_database_path],
             task_name='process quad %s' % quad_id)
         break
     task_graph.close()
     task_graph.join()
-    sys.exit(0)
+
+    annotations_list = _execute_sqlite(
+        '''
+        SELECT
+            record
+        FROM annotation_table
+        ''', dams_database_path, argument_list=[], fetch='all')
 
     with open(classes_csv_path, 'w') as classes_csv_file:
         classes_csv_file.write('dam,0\n')
-    annotations_csv_file = open(annotations_csv_path, 'w')
-
-
-
-    # for each quad id
-    #   download the quad
-    #   get all the bounding boxes, transform them, make them local coordinates
-    #   put in r-tree
-    #   cut quad into sizes that are the same size as "not a dam"
-    #   for each quad find all the bounding boxes that intersect it
-    #       if there are some, create a png, and annotations in db to support it
-    #       note the local png will need local coordinates
-    #   update the database that the quad is annodated
-    #   delete the quad
-
-    '''
-        SELECT
-            quad_id, quad_id_to_uri.quad_uri, bounding_box
-        FROM bounding_box_to_mosaic
-        INNER JOIN quad_id_to_uri ON
-            bounding_box_to_mosaic.quad_id = quad_id_to_uri.quad_id
-    '''
-    """
-        CREATE TABLE quad_bounding_box_uri_table (
-            quad_id TEXT NOT NULL,
-            quad_uri TEXT NOT NULL,
-            bounding_box BLOB NOT NULL);
-
-        CREATE TABLE quad_processing_status (
-            quad_id TEXT NOT NULL,
-            processed INT NOT NULL);
-    """
+    annotations_string = '\n'.join([x[0] for x in annotations_list])
+    with open(annotations_csv_path, 'w') as annotations_csv_file:
+        annotations_csv_file.write(annotations_string)
+        annotations_csv_file.write('\n')
 
 
 def process_quad(quad_uri, quad_id, dams_database_path):
