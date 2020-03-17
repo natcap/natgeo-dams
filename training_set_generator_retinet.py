@@ -267,6 +267,7 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         task_name='download %s' % quad_uri)
     download_quad_task.join()
     quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
+    n_cols, n_rows = quad_info['raster_size']
 
     # extract the bounding boxes
     bb_srs = osr.SpatialReference()
@@ -297,12 +298,16 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         ul_j, lr_j = sorted([ul_j, lr_j])
 
         dam_bb = [ul_i, ul_j, lr_i, lr_j]
+        if ul_i < 0 or ul_j < 0 or lr_i >= n_cols or lr_j >= n_rows:
+            raise ValueError(
+                'transformed coordinates outside of raster bounds: '
+                'lat/lng: %s\nlocal: %sraster_bb: %s\ntransformed: %s' % (
+                    bounding_box, local_bb, quad_info['bounding_box'], dam_bb))
+
         index_to_bb_map[index] = dam_bb
         LOGGER.debug('going to insert this: %s', str((index, dam_bb)))
         bounding_box_rtree.insert(index, dam_bb)
 
-    quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
-    n_cols, n_rows = quad_info['raster_size']
     quad_slice_index = 0
     annotation_string_list = []
     for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
