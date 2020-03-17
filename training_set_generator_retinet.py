@@ -213,6 +213,7 @@ def make_training_data(
         INNER JOIN quad_bounding_box_uri_table ON
             quad_processing_status.quad_id=quad_bounding_box_uri_table.quad_id
         WHERE processed=0
+        GROUP BY quad_bounding_box_uri_table.quad_id, quad_uri
         ''', dams_database_path, argument_list=[], fetch='all')
 
     for quad_id, quad_uri in quad_id_uris_to_process:
