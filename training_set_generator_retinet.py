@@ -219,6 +219,7 @@ def make_training_data(
         _ = task_graph.add_task(
             func=process_quad,
             args=(quad_uri, quad_id, dams_database_path),
+            transient_run=True,
             ignore_path_list=[dams_database_path],
             task_name='process quad %s' % quad_id)
         break
@@ -235,6 +236,8 @@ def make_training_data(
     with open(classes_csv_path, 'w') as classes_csv_file:
         classes_csv_file.write('dam,0\n')
     annotations_string = '\n'.join([x[0] for x in annotations_list])
+    LOGGER.debug('annotations list: %s', str(annotations_list))
+    LOGGER.debug('annotations string: %s', annotations_string)
     with open(annotations_csv_path, 'w') as annotations_csv_file:
         annotations_csv_file.write(annotations_string)
         annotations_csv_file.write('\n')
@@ -333,11 +336,12 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                     base_bb[2] -= xoff
                     base_bb[3] -= yoff
                 annotation_string_list.append(
-                    ['%d,%d,%d,%d,%s' % (
-                        base_bb[0], base_bb[1], base_bb[2], base_bb[3],
-                        quad_png_path)])
+                    ['%s,%d,%d,%d,%d,dam' % (
+                        quad_png_path, base_bb[0], base_bb[1], base_bb[2],
+                        base_bb[3])])
 
-    LOGGER.debug('updating annotation table')
+    LOGGER.debug(
+        'updating annotation table with this: %s', str(annotation_string_list))
     _execute_sqlite(
         '''
         INSERT OR REPLACE INTO annotation_table
@@ -345,6 +349,14 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         VALUES (?);
         ''', dams_database_path,
         argument_list=annotation_string_list, execute='many', mode='modify')
+
+    _execute_sqlite(
+        '''
+        UPDATE quad_processing_status
+            SET processed=1
+        WHERE quad_id=?
+        ''', dams_database_path, argument_list=[quad_id], mode='modify')
+
 
     #TODO: os.remove(quad_raster_path)
     task_graph.join()
@@ -388,6 +400,7 @@ def main():
     task_graph.add_task(
         func=create_status_database,
         args=(planet_quad_dams_database_path, STATUS_DATABASE_PATH),
+        hash_target_files=False,
         target_path_list=[STATUS_DATABASE_PATH],
         dependent_task_list=[quad_db_dl_task],
         task_name='create status database')
