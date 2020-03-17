@@ -222,7 +222,6 @@ def make_training_data(
             transient_run=True,
             ignore_path_list=[dams_database_path],
             task_name='process quad %s' % quad_id)
-        break
     task_graph.close()
     task_graph.join()
 
