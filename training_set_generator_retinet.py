@@ -34,7 +34,7 @@ PLANET_QUAD_DAMS_DATABASE_URI = (
 STATUS_DATABASE_PATH = os.path.join(CHURN_DIR, 'work_status.db')
 
 logging.basicConfig(
-    stream=sys.stdout,
+    filename='log.txt',
     level=logging.DEBUG,
     format=(
         '%(asctime)s (%(relativeCreated)d) %(processName)s %(levelname)s '
