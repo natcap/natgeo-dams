@@ -384,7 +384,7 @@ def main():
             pass
 
     task_graph = taskgraph.TaskGraph(
-        WORKSPACE_DIR, multiprocessing.cpu_count(), 5.0)
+        WORKSPACE_DIR, -1) #multiprocessing.cpu_count(), 5.0)
 
     planet_quad_dams_database_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(PLANET_QUAD_DAMS_DATABASE_URI))
