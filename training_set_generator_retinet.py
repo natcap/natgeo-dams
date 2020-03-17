@@ -325,20 +325,23 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                     TRAINING_IMAGERY_DIR, '%s_%d.png' % (
                         quad_id, quad_slice_index))
                 quad_slice_index += 1
-                make_quad_png(
-                    quad_raster_path, quad_png_path,
-                    xoff, yoff, win_xsize, win_ysize)
-                # transform local bbs so they're relative to the png
-                for bb_index in bb_indexes:
-                    base_bb = index_to_bb_map[bb_index]
-                    base_bb[0] -= xoff
-                    base_bb[1] -= yoff
-                    base_bb[2] -= xoff
-                    base_bb[3] -= yoff
-                annotation_string_list.append(
-                    ['%s,%d,%d,%d,%d,dam' % (
-                        quad_png_path, base_bb[0], base_bb[1], base_bb[2],
-                        base_bb[3])])
+                try:
+                    make_quad_png(
+                        quad_raster_path, quad_png_path,
+                        xoff, yoff, win_xsize, win_ysize)
+                    # transform local bbs so they're relative to the png
+                    for bb_index in bb_indexes:
+                        base_bb = index_to_bb_map[bb_index]
+                        base_bb[0] -= xoff
+                        base_bb[1] -= yoff
+                        base_bb[2] -= xoff
+                        base_bb[3] -= yoff
+                    annotation_string_list.append(
+                        ['%s,%d,%d,%d,%d,dam' % (
+                            quad_png_path, base_bb[0], base_bb[1], base_bb[2],
+                            base_bb[3])])
+                except Exception:
+                    LOGGER.exception('skipping %s' % quad_raster_path)
 
     LOGGER.debug(
         'updating annotation table with this: %s', str(annotation_string_list))
