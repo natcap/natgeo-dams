@@ -46,6 +46,7 @@ logging.getLogger('taskgraph').setLevel(logging.INFO)
 TRAINING_IMAGE_DIMS = (419, 419)
 MIN_BB_SIZE = 16
 
+
 def create_status_database(quads_database_path, target_status_database_path):
     """Create a runtime status database if it doesn't exist.
 
@@ -216,7 +217,7 @@ def make_training_data(task_graph, dams_database_path, imagery_dir):
             transient_run=True,
             ignore_path_list=[dams_database_path],
             task_name='process quad %s' % quad_id)
-        if index > multiprocessing.cpu_count() * 30:
+        if index > multiprocessing.cpu_count() * 15:
             break
     task_graph.close()
     task_graph.join()
@@ -279,13 +280,13 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         # least 16x16
         if lr_i-ul_i < MIN_BB_SIZE:
             delta = MIN_BB_SIZE - lr_i-ul_i
+            ul_i -= max(1, delta//2)
             lr_i += max(1, delta//2)
-            ul_i += max(1, delta//2)
 
         if lr_j-ul_j < MIN_BB_SIZE:
             delta = MIN_BB_SIZE - lr_j-ul_j
+            ul_j -= max(1, delta//2)
             lr_j += max(1, delta//2)
-            ul_j += max(1, delta//2)
 
         # possible the dam may lie outside of the quad, if so clip to the
         # edge of the quad
