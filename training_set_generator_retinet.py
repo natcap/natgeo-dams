@@ -488,3 +488,4 @@ def make_quad_png(
 
 if __name__ == '__main__':
     main()
+    LOGGER.debug("ALL DONE!")
