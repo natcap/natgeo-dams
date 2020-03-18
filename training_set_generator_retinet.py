@@ -330,10 +330,10 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                 LOGGER.debug(
                     'these local bbs at %d %d: %s', xoff, yoff,
                     str(bb_indexes))
-                # clip out the png
+                # clip out the png and name after number of bbs per image
                 quad_png_path = os.path.join(
-                    TRAINING_IMAGERY_DIR, '%s_%d.png' % (
-                        quad_id, quad_slice_index))
+                    TRAINING_IMAGERY_DIR, '%d_%s_%d.png' % (
+                        len(bb_indexes), quad_id, quad_slice_index))
                 quad_slice_index += 1
                 try:
                     make_quad_png(
