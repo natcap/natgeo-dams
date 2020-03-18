@@ -197,6 +197,7 @@ def make_training_data(task_graph, dams_database_path, imagery_dir):
 
     """
     # get all the quad_ids
+    # TODO: put processed=0 back
     quad_id_uris_to_process = _execute_sqlite(
         '''
         SELECT
@@ -205,7 +206,7 @@ def make_training_data(task_graph, dams_database_path, imagery_dir):
         FROM quad_processing_status
         INNER JOIN quad_bounding_box_uri_table ON
             quad_processing_status.quad_id=quad_bounding_box_uri_table.quad_id
-        WHERE processed=0
+        WHERE quad_bounding_box_uri_table.quad_id='999-1271'
         GROUP BY quad_bounding_box_uri_table.quad_id, quad_uri
         ''', dams_database_path, argument_list=[], fetch='all')
 
@@ -371,7 +372,8 @@ def process_quad(quad_uri, quad_id, dams_database_path):
 
     task_graph.join()
     task_graph.close()
-    os.remove(quad_raster_path)
+    # TODO: put the rmove back
+    # os.remove(quad_raster_path)
 
 
 def copy_from_gs(gs_uri, target_path):
