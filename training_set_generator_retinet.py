@@ -44,7 +44,7 @@ LOGGER = logging.getLogger(__name__)
 logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 TRAINING_IMAGE_DIMS = (419, 419)
-
+MIN_BB_SIZE = 16
 
 def create_status_database(quads_database_path, target_status_database_path):
     """Create a runtime status database if it doesn't exist.
@@ -277,13 +277,13 @@ def process_quad(quad_uri, quad_id, dams_database_path):
 
         # possible that the sample is so small its too small. Lets make it at
         # least 16x16
-        if lr_i-ul_i < 16:
-            delta = lr_i-ul_i - 16
+        if lr_i-ul_i < MIN_BB_SIZE:
+            delta = MIN_BB_SIZE - lr_i-ul_i
             lr_i += max(1, delta//2)
             ul_i += max(1, delta//2)
 
-        if lr_j-ul_j < 16:
-            delta = lr_j-ul_j - 16
+        if lr_j-ul_j < MIN_BB_SIZE:
+            delta = MIN_BB_SIZE - lr_j-ul_j
             lr_j += max(1, delta//2)
             ul_j += max(1, delta//2)
 
