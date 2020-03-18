@@ -341,11 +341,14 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                         xoff, yoff, win_xsize, win_ysize)
                     # transform local bbs so they're relative to the png
                     for bb_index in bb_indexes:
-                        base_bb = index_to_bb_map[bb_index]
-                        base_bb[0] -= xoff
-                        base_bb[1] -= yoff
-                        base_bb[2] -= xoff
-                        base_bb[3] -= yoff
+                        base_bb = list(index_to_bb_map[bb_index])
+                        base_bb[0] = max(0, base_bb[0]-xoff)
+                        base_bb[1] = max(0, base_bb[1]-yoff)
+                        base_bb[2] = \
+                            min(TRAINING_IMAGE_DIMS[0], base_bb[2]-xoff)
+                        base_bb[3] = \
+                            min(TRAINING_IMAGE_DIMS[1], base_bb[3]-yoff)
+
                     annotation_string_list.append(
                         ['%s,%d,%d,%d,%d,dam' % (
                             quad_png_path, base_bb[0], base_bb[1], base_bb[2],
