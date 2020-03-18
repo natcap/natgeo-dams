@@ -216,7 +216,7 @@ def make_training_data(task_graph, dams_database_path, imagery_dir):
             transient_run=True,
             ignore_path_list=[dams_database_path],
             task_name='process quad %s' % quad_id)
-        if index > multiprocessing.cpu_count() * 10:
+        if index > multiprocessing.cpu_count() * 30:
             break
     task_graph.close()
     task_graph.join()
