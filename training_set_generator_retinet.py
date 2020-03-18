@@ -279,12 +279,12 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         # possible that the sample is so small its too small. Lets make it at
         # least 16x16
         if lr_i-ul_i < MIN_BB_SIZE:
-            delta = MIN_BB_SIZE - lr_i-ul_i
+            delta = MIN_BB_SIZE - (lr_i-ul_i)
             ul_i -= max(1, delta//2)
             lr_i += max(1, delta//2)
 
         if lr_j-ul_j < MIN_BB_SIZE:
-            delta = MIN_BB_SIZE - lr_j-ul_j
+            delta = MIN_BB_SIZE - (lr_j-ul_j)
             ul_j -= max(1, delta//2)
             lr_j += max(1, delta//2)
 
