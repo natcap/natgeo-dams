@@ -208,7 +208,6 @@ def make_training_data(task_graph, dams_database_path, imagery_dir):
         WHERE processed=0
         GROUP BY quad_bounding_box_uri_table.quad_id, quad_uri
         ''', dams_database_path, argument_list=[], fetch='all')
-    LOGGER.debug('these quads were grabbed: %s', quad_id_uris_to_process)
     for index, (quad_id, quad_uri) in enumerate(quad_id_uris_to_process):
         _ = task_graph.add_task(
             func=process_quad,
