@@ -274,6 +274,18 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         ul_i, lr_i = sorted([ul_i, lr_i])
         ul_j, lr_j = sorted([ul_j, lr_j])
 
+        # possible that the sample is so small its too small. Lets make it at
+        # least 16x16
+        if lr_i-ul_i < 16:
+            delta = lr_i-ul_i - 16
+            lr_i += max(1, delta//2)
+            ul_i += max(1, delta//2)
+
+        if lr_j-ul_j < 16:
+            delta = lr_j-ul_j - 16
+            lr_j += max(1, delta//2)
+            ul_j += max(1, delta//2)
+
         # possible the dam may lie outside of the quad, if so clip to the
         # edge of the quad
         if ul_j < 0:
