@@ -182,9 +182,7 @@ def _execute_sqlite(
         raise
 
 
-def make_training_data(
-        task_graph, dams_database_path, imagery_dir, annotations_csv_path,
-        classes_csv_path):
+def make_training_data(task_graph, dams_database_path, imagery_dir):
     """Make training data by fetching imagery and building CSVs.
 
     Parameters:
@@ -193,11 +191,6 @@ def make_training_data(
         dams_database_path (str): path to database containing a
             "bounding_box_to_mosaic" table.
         imagery_dir (str): path to directory to store images.
-        annotations_csv_path (str): path to a csv containing annotations.
-            Each line is of the form: path/to/image.jpg,x1,y1,x2,y2,class_name
-        classes_csv_path (str): path to csv containing classes definitions
-            each line containing the row [class name],[id]. Might only be
-            "dam,0"
 
     Returns:
         None
@@ -225,22 +218,6 @@ def make_training_data(
             task_name='process quad %s' % quad_id)
     task_graph.close()
     task_graph.join()
-
-    annotations_list = _execute_sqlite(
-        '''
-        SELECT
-            record
-        FROM annotation_table
-        ''', dams_database_path, argument_list=[], fetch='all')
-
-    with open(classes_csv_path, 'w') as classes_csv_file:
-        classes_csv_file.write('dam,0\n')
-    annotations_string = '\n'.join([x[0] for x in annotations_list])
-    LOGGER.debug('annotations list: %s', str(annotations_list))
-    LOGGER.debug('annotations string: %s', annotations_string)
-    with open(annotations_csv_path, 'w') as annotations_csv_file:
-        annotations_csv_file.write(annotations_string)
-        annotations_csv_file.write('\n')
 
 
 def process_quad(quad_uri, quad_id, dams_database_path):
@@ -417,6 +394,14 @@ def main():
         task_name='download planet quad db',
         target_path_list=[planet_quad_dams_database_path])
 
+    quad_db_dl_task = task_graph.add_task(
+        func=copy_from_gs,
+        args=(
+            PLANET_QUAD_DAMS_DATABASE_URI,
+            planet_quad_dams_database_path),
+        task_name='download planet quad db',
+        target_path_list=[planet_quad_dams_database_path])
+
     task_graph.add_task(
         func=create_status_database,
         args=(planet_quad_dams_database_path, STATUS_DATABASE_PATH),
@@ -427,9 +412,23 @@ def main():
 
     task_graph.join()
 
-    make_training_data(
-        task_graph, STATUS_DATABASE_PATH,
-        TRAINING_IMAGERY_DIR, ANNOTATIONS_CSV_PATH, CLASSES_CSV_PATH)
+    make_training_data(task_graph, STATUS_DATABASE_PATH, TRAINING_IMAGERY_DIR)
+
+    annotations_list = _execute_sqlite(
+        '''
+        SELECT
+            record
+        FROM annotation_table
+        ''', STATUS_DATABASE_PATH, argument_list=[], fetch='all')
+
+    with open(CLASSES_CSV_PATH, 'w') as classes_csv_file:
+        classes_csv_file.write('dam,0\n')
+    annotations_string = '\n'.join([x[0] for x in annotations_list])
+    LOGGER.debug('annotations list: %s', str(annotations_list))
+    LOGGER.debug('annotations string: %s', annotations_string)
+    with open(ANNOTATIONS_CSV_PATH, 'w') as annotations_csv_file:
+        annotations_csv_file.write(annotations_string)
+        annotations_csv_file.write('\n')
 
     task_graph.close()
     task_graph.join()
