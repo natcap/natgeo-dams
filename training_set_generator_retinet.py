@@ -209,13 +209,15 @@ def make_training_data(task_graph, dams_database_path, imagery_dir):
         GROUP BY quad_bounding_box_uri_table.quad_id, quad_uri
         ''', dams_database_path, argument_list=[], fetch='all')
 
-    for quad_id, quad_uri in quad_id_uris_to_process:
+    for index, (quad_id, quad_uri) in enumerate(quad_id_uris_to_process):
         _ = task_graph.add_task(
             func=process_quad,
             args=(quad_uri, quad_id, dams_database_path),
             transient_run=True,
             ignore_path_list=[dams_database_path],
             task_name='process quad %s' % quad_id)
+        if index > multiprocessing.cpu_count():
+            break
     task_graph.close()
     task_graph.join()
 
