@@ -15,6 +15,7 @@ import pygeoprocessing
 import png
 import retrying
 import rtree
+import shapely.geometry
 import taskgraph
 
 """
@@ -257,8 +258,7 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         FROM quad_bounding_box_uri_table
         WHERE quad_id=?
         ''', dams_database_path, argument_list=[quad_id], fetch='all')
-    bounding_box_rtree = rtree.index.Index()
-    index_to_bb_map = {}
+    working_dam_bb_list = []  # will be used to collapose duplicates later
     for index, (bounding_box_blob,) in enumerate(bounding_box_blob_list):
         bounding_box = pickle.loads(bounding_box_blob)
         LOGGER.debug('%s: %s', quad_uri, bounding_box)
@@ -307,9 +307,22 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                 'lat/lng: %s\nlocal: %sraster_bb: %s\ntransformed: %s' % (
                     bounding_box, local_bb, quad_info['bounding_box'], dam_bb))
 
-        index_to_bb_map[index] = dam_bb
-        LOGGER.debug('going to insert this: %s', str((index, dam_bb)))
-        bounding_box_rtree.insert(index, dam_bb)
+        working_dam_bb_list.append(dam_bb)
+
+    bounding_box_rtree = rtree.index.Index()
+    index_to_bb_list = []
+    while working_dam_bb_list:
+        current_bb = shapely.geometry.box(*working_dam_bb_list.pop())
+        for index in range(len(working_dam_bb_list)-1, -1, -1):
+            test_bb = shapely.geometry.box(*working_dam_bb_list[index])
+            if current_bb.intersects(test_bb):
+                current_bb = current_bb.union(test_bb)
+                del working_dam_bb_list[index]
+        LOGGER.debug(
+            'going to insert this: %s',
+            str((len(index_to_bb_list), current_bb.bounds)))
+        bounding_box_rtree.insert(len(index_to_bb_list), current_bb.bounds)
+        index_to_bb_list.append(current_bb.bounds)
 
     quad_slice_index = 0
     annotation_string_list = []
@@ -324,6 +337,10 @@ def process_quad(quad_uri, quad_id, dams_database_path):
 
             bb_indexes = list(bounding_box_rtree.intersection(
                 (xoff, yoff, xoff+win_xsize, yoff+win_ysize)))
+
+            # see if any of the bounding boxes intersect in which case make
+            # a single big one
+
             if bb_indexes:
                 LOGGER.debug(
                     'these local bbs at %d %d: %s', xoff, yoff,
@@ -339,7 +356,7 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                         xoff, yoff, win_xsize, win_ysize)
                     # transform local bbs so they're relative to the png
                     for bb_index in bb_indexes:
-                        base_bb = list(index_to_bb_map[bb_index])
+                        base_bb = list(index_to_bb_list[bb_index])
                         base_bb[0] = max(0, base_bb[0]-xoff)
                         base_bb[1] = max(0, base_bb[1]-yoff)
                         base_bb[2] = \
