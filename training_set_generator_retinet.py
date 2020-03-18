@@ -42,7 +42,7 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 logging.getLogger('taskgraph').setLevel(logging.INFO)
 
-TRAINING_IMAGE_DIMS = (419, 419)
+TRAINING_IMAGE_DIMS = (800, 800)
 
 
 def create_status_database(quads_database_path, target_status_database_path):
