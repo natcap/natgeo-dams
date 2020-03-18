@@ -348,11 +348,10 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                             min(TRAINING_IMAGE_DIMS[0], base_bb[2]-xoff)
                         base_bb[3] = \
                             min(TRAINING_IMAGE_DIMS[1], base_bb[3]-yoff)
-
-                    annotation_string_list.append(
-                        ['%s,%d,%d,%d,%d,dam' % (
-                            quad_png_path, base_bb[0], base_bb[1], base_bb[2],
-                            base_bb[3])])
+                        annotation_string_list.append(
+                            ['%s,%d,%d,%d,%d,dam' % (
+                                quad_png_path, base_bb[0], base_bb[1],
+                                base_bb[2], base_bb[3])])
                 except Exception:
                     LOGGER.exception('skipping %s' % quad_raster_path)
 
