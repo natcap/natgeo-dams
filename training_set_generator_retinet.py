@@ -473,7 +473,7 @@ def main():
     with open(ANNOTATIONS_CSV_PATH, 'w') as annotations_csv_file:
         annotations_csv_file.write(annotations_string)
         for not_a_dam_path in glob.glob(
-                os.path.join(NOT_A_DAM_DIR, '*.tif')):
+                os.path.join(NOT_A_DAM_DIR, '*.png')):
             annotations_csv_file.write('\n%s,,,,,' % not_a_dam_path)
         annotations_csv_file.write('\n')
 
