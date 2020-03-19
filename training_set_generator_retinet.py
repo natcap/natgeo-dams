@@ -276,6 +276,8 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         ul_j, lr_j = sorted([ul_j, lr_j])
 
 
+
+
         # possible the dam may lie outside of the quad, if so clip to the
         # edge of the quad
         if ul_j < 0:
@@ -366,6 +368,16 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                                 bb_ycentroid-yoff < 0 or
                                 bb_ycentroid-yoff >= TRAINING_IMAGE_DIMS[1]):
                             continue
+
+                        # make sure it's not tiny
+                        if base_bb[2]-base_bb[0] < 16:
+                            delta = 16-(base_bb[2]-base_bb[0])
+                            base_bb[0] -= delta//2
+                            base_bb[2] += delta//2
+                        if base_bb[3]-base_bb[1] < 16:
+                            delta = 16-(base_bb[3]-base_bb[1])
+                            base_bb[1] -= delta//2
+                            base_bb[3] += delta//2
 
                         base_bb[0] = max(0, base_bb[0]-xoff)
                         base_bb[1] = max(0, base_bb[1]-yoff)
