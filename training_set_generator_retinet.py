@@ -291,13 +291,13 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         bb_xsize = max(1, lr_i-ul_i)
         bb_ysize = max(1, lr_j-ul_j)
         if bb_xsize / bb_ysize < 0.5:
-            min_xsize = max(2, 0.5 * bb_ysize/bb_xsize)
-            ul_i -= min_xsize/2
-            lr_i += min_xsize/2
+            delta_xsize = max(2, 0.5*bb_ysize-bb_xsize)
+            ul_i -= delta_xsize/2
+            lr_i += delta_xsize/2
         elif bb_ysize / bb_xsize < 0.5:
-            min_ysize = max(2, 0.5 * bb_xsize/bb_ysize)
-            ul_j -= min_ysize/2
-            lr_j += min_ysize/2
+            delta_ysize = max(2, 0.5*bb_xsize-bb_ysize)
+            ul_j -= delta_ysize/2
+            lr_j += delta_ysize/2
         dam_bb = [ul_i, ul_j, lr_i, lr_j]
 
         # this is a sanity check
