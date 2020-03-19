@@ -44,7 +44,6 @@ LOGGER = logging.getLogger(__name__)
 logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 TRAINING_IMAGE_DIMS = (419, 419)
-MIN_BB_SIZE = 16
 
 
 def create_status_database(quads_database_path, target_status_database_path):
@@ -276,17 +275,6 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         ul_i, lr_i = sorted([ul_i, lr_i])
         ul_j, lr_j = sorted([ul_j, lr_j])
 
-        # possible that the sample is so small its too small. Lets make it at
-        # least 16x16
-        if lr_i-ul_i < MIN_BB_SIZE:
-            delta = MIN_BB_SIZE - (lr_i-ul_i)
-            ul_i -= max(1, delta//2)
-            lr_i += max(1, delta//2)
-
-        if lr_j-ul_j < MIN_BB_SIZE:
-            delta = MIN_BB_SIZE - (lr_j-ul_j)
-            ul_j -= max(1, delta//2)
-            lr_j += max(1, delta//2)
 
         # possible the dam may lie outside of the quad, if so clip to the
         # edge of the quad
@@ -299,6 +287,17 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         if lr_j >= n_rows:
             lr_j = n_rows - 1
 
+        # if < 0.5 ratio, bump up to 0.5 ratio
+        bb_xsize = lr_i-ul_i
+        bb_ysize = lr_j-ul_j
+        if bb_xsize / bb_ysize < 0.5:
+            min_xsize = 0.5 * bb_ysize/bb_xsize
+            ul_i -= min_xsize/2
+            lr_i += min_xsize/2
+        elif bb_ysize / bb_xsize < 0.5:
+            min_ysize = 0.5 * bb_xsize/bb_ysize
+            ul_j -= min_ysize/2
+            lr_j += min_ysize/2
         dam_bb = [ul_i, ul_j, lr_i, lr_j]
 
         # this is a sanity check
@@ -358,6 +357,16 @@ def process_quad(quad_uri, quad_id, dams_database_path):
                     # transform local bbs so they're relative to the png
                     for bb_index in bb_indexes:
                         base_bb = list(index_to_bb_list[bb_index])
+                        # if the centroid is out of bounds, go with the other
+                        # quad that contains it
+                        bb_xcentroid = base_bb[0]+(base_bb[2]-base_bb[0])/2
+                        bb_ycentroid = base_bb[1]+(base_bb[3]-base_bb[1])/2
+                        if (bb_xcentroid-xoff < 0 or
+                                bb_xcentroid-xoff >= TRAINING_IMAGE_DIMS[0] or
+                                bb_ycentroid-yoff < 0 or
+                                bb_ycentroid-yoff >= TRAINING_IMAGE_DIMS[1]):
+                            continue
+
                         base_bb[0] = max(0, base_bb[0]-xoff)
                         base_bb[1] = max(0, base_bb[1]-yoff)
                         base_bb[2] = \
