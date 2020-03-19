@@ -288,8 +288,8 @@ def process_quad(quad_uri, quad_id, dams_database_path):
             lr_j = n_rows - 1
 
         # if < 0.5 ratio, bump up to 0.5 ratio
-        bb_xsize = lr_i-ul_i
-        bb_ysize = lr_j-ul_j
+        bb_xsize = max(1, lr_i-ul_i)
+        bb_ysize = max(1, lr_j-ul_j)
         if bb_xsize / bb_ysize < 0.5:
             min_xsize = 0.5 * bb_ysize/bb_xsize
             ul_i -= min_xsize/2
