@@ -1,4 +1,5 @@
 """Tracer code to set up training pipeline."""
+import glob
 import os
 import logging
 import multiprocessing
@@ -29,6 +30,7 @@ CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
 ANNOTATIONS_CSV_PATH = os.path.join('.', 'annotations.csv')
 CLASSES_CSV_PATH = os.path.join('.', 'classes.csv')
 TRAINING_IMAGERY_DIR = os.path.join(WORKSPACE_DIR, 'training_imagery')
+NOT_A_DAM_DIR = 'not_a_dam_images'
 PLANET_QUAD_DAMS_DATABASE_URI = (
     'gs://natgeo-dams-data/databases/'
     'quad_database_md5_12866cf27da2575f33652d197beb05d3.db')
@@ -470,6 +472,9 @@ def main():
     LOGGER.debug('annotations string: %s', annotations_string)
     with open(ANNOTATIONS_CSV_PATH, 'w') as annotations_csv_file:
         annotations_csv_file.write(annotations_string)
+        for not_a_dam_path in glob.glob(
+                os.path.join(NOT_A_DAM_DIR, '*.tif')):
+            annotations_csv_file.write('\n%s,,,,,' % not_a_dam_path)
         annotations_csv_file.write('\n')
 
     task_graph.close()
