@@ -2,7 +2,7 @@
 # This is how you run it:
 # docker build dockerfile-dir -f dockerfile-dir/docker-gpu -t natcap/dam-inference-server-gpu:0.0.1 && docker run -it --rm -v `pwd`:/usr/local/natgeo_dams natcap/dam-inference-server-gpu:0.0.1 python "./training_set_generator_retinet.py"
 
-FROM tensorflow/tensorflow:2.1.0-py3-gpu
+FROM tensorflow/tensorflow:2.1.0-gpu-py3
 
 SHELL ["/bin/bash", "-c"]
 
