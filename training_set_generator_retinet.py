@@ -34,6 +34,9 @@ NOT_A_DAM_DIR = 'not_a_dam_images'
 PLANET_QUAD_DAMS_DATABASE_URI = (
     'gs://natgeo-dams-data/databases/'
     'quad_database_md5_12866cf27da2575f33652d197beb05d3.db')
+COUNTRY_BORDER_VECTOR_URI = (
+    'gs://natgeo-dams-data/ecoshards/'
+    'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg')
 STATUS_DATABASE_PATH = os.path.join(CHURN_DIR, 'work_status.db')
 
 logging.basicConfig(
@@ -422,7 +425,8 @@ def copy_from_gs(gs_uri, target_path):
     except Exception:
         pass
     subprocess.run(
-        '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
+        #'/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
+        'gsutil cp %s %s' %
         (gs_uri, target_path), shell=True)
 
 
@@ -447,6 +451,18 @@ def main():
             planet_quad_dams_database_path),
         task_name='download planet quad db',
         target_path_list=[planet_quad_dams_database_path])
+    country_borders_vector_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(COUNTRY_BORDER_VECTOR_URI))
+    country_borders_dl_task = task_graph.add_task(
+        func=copy_from_gs,
+        args=(
+            COUNTRY_BORDER_VECTOR_URI,
+            country_borders_vector_path),
+        task_name='download country borders vector',
+        target_path_list=[country_borders_vector_path])
+
+    country_borders_dl_task.join()
+    sys.exit(0)
 
     quad_db_dl_task = task_graph.add_task(
         func=copy_from_gs,
