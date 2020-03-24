@@ -12,15 +12,17 @@ import retrying
 import taskgraph
 
 WORKSPACE_DIR = 'quad_fetcher_workspace'
+ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
 CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
 QUAD_DIR = os.path.join(CHURN_DIR, 'quads')
+
+COUNTRY_BORDER_VECTOR_URI = (
+    'gs://natgeo-dams-data/ecoshards/'
+    'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg')
 
 # This is the Planet Mosaic ID for global_quarterly_2019q2_mosaic
 MOSAIC_ID = '4ce5863a-fb3f-4cad-a899-b8c053af1858'
 # This was pre-calculated
-KNOWN_QUAD_ID_DATABASE_URI = (
-    'gs://natgeo-dams-data/ecoshards/'
-    'status_database_md5_1be8ade909ce3000d61f1c725cfa7429.db')
 
 PLANET_API_KEY_FILE = 'planet_api_key.txt'
 REQUEST_TIMEOUT = 1.5
@@ -164,6 +166,19 @@ def fetch_quad(planet_api_key, mosaic_id, quad_id, target_quad_path):
         raise
 
 
+def copy_from_gs(gs_uri, target_path):
+    """Copy a GS objec to `target_path."""
+    dirpath = os.path.dirname(target_path)
+    try:
+        os.makedirs(dirpath)
+    except Exception:
+        pass
+    subprocess.run(
+        #'/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
+        'gsutil cp %s %s' %
+        (gs_uri, target_path), shell=True)
+
+
 if __name__ == '__main__':
     for dir_path in [WORKSPACE_DIR, CHURN_DIR, QUAD_DIR]:
         try:
@@ -180,17 +195,15 @@ if __name__ == '__main__':
 
     task_graph = taskgraph.TaskGraph(CHURN_DIR, -1, 5.0)
 
-    quad_database_path = os.path.join(CHURN_DIR, 'quad_database.db')
-    gsutil_cp_command = './google-cloud-sdk/bin/gsutil cp %s %s' % (
-        KNOWN_QUAD_ID_DATABASE_URI, quad_database_path)
-    LOGGER.debug(gsutil_cp_command)
-    download_database_task = task_graph.add_task(
-        func=subprocess.run,
-        args=(gsutil_cp_command,),
-        kwargs={'shell': True, 'check': True},
-        task_name='download %s' % quad_database_path,
-        hash_target_files=False,
-        target_path_list=[quad_database_path])
+    country_borders_vector_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(COUNTRY_BORDER_VECTOR_URI))
+    country_borders_dl_task = task_graph.add_task(
+        func=copy_from_gs,
+        args=(
+            COUNTRY_BORDER_VECTOR_URI,
+            country_borders_vector_path),
+        task_name='download country borders vector',
+        target_path_list=[country_borders_vector_path])
 
     quads_to_download_query = (
         """
