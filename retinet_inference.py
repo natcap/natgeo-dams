@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 
+import keras
 from keras_retinanet import models
 from keras_retinanet.preprocessing.csv_generator import CSVGenerator
 from keras_retinanet.utils.anchors import make_shapes_callback
@@ -14,6 +15,7 @@ from keras_retinanet.utils.eval import _get_detections
 from keras_retinanet.utils.gpu import setup_gpu
 from keras_retinanet.utils.keras_version import check_keras_version
 from keras_retinanet.utils.tf_version import check_tf_version
+import numpy
 
 
 def create_generator(args, preprocess_image):
@@ -103,19 +105,36 @@ def main(args=None):
     # load the model
     print('Loading model, this may take a second...')
     model = models.load_model(args.model, backbone_name=args.backbone)
-    generator.compute_shapes = make_shapes_callback(model)
 
-    # print model summary
-    # print(model.summary())
+    for i in range(generator.size()):
+        raw_image = generator.load_image(i)
+        image = generator.preprocess_image(raw_image.copy())
+        image, scale = generator.resize_image(image)
 
-    # start evaluation
+        if keras.backend.image_data_format() == 'channels_first':
+            image = image.transpose((2, 0, 1))
 
-    all_detections, all_inferences = _get_detections(
-        generator, model, score_threshold=args.score_threshold,
-        max_detections=args.max_detections, save_path=None)
+        boxes, scores, labels = model.predict_on_batch(
+            numpy.expand_dims(image, axis=0))[:3]
 
-    print(all_detections)
-    print(all_inferences)
+        print(boxes)
+        print(scores)
+        print(labels)
+        break
+
+    # generator.compute_shapes = make_shapes_callback(model)
+
+    # # print model summary
+    # # print(model.summary())
+
+    # # start evaluation
+
+    # all_detections, all_inferences = _get_detections(
+    #     generator, model, score_threshold=args.score_threshold,
+    #     max_detections=args.max_detections, save_path=None)
+
+    # print(all_detections)
+    # print(all_inferences)
 
 
     # average_precisions, inference_time = evaluate(
