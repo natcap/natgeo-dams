@@ -6,10 +6,15 @@ import sqlite3
 import subprocess
 import sys
 
+from osgeo import gdal
 import ecoshard
 import pygeoprocessing
 import requests
 import retrying
+import shapely.geometry
+import shapely.ops
+import shapely.prepared
+import shapely.wkb
 import taskgraph
 
 WORKSPACE_DIR = 'planet_quad_cache_workspace'
@@ -128,15 +133,15 @@ def create_status_database(database_path):
             gs_uri TEXT NOT NULL
             );
 
-        CREATE INDEX long_min_index ON (long_min);
-        CREATE INDEX lat_min_index ON (lat_min);
-        CREATE INDEX long_max_index ON (long_max);
-        CREATE INDEX lat_max_index ON (lat_max);
+        CREATE INDEX long_min_index ON quad_cache_table (long_min);
+        CREATE INDEX lat_min_index ON quad_cache_table (lat_min);
+        CREATE INDEX long_max_index ON quad_cache_table (long_max);
+        CREATE INDEX lat_max_index ON quad_cache_table (lat_max);
         """)
     if os.path.exists(database_path):
         os.remove(database_path)
     connection = sqlite3.connect(database_path)
-    connection.execute(create_database_sql)
+    connection.executescript(create_database_sql)
     connection.commit()
     connection.close()
 
@@ -204,7 +209,7 @@ def get_quad_ids(session, mosaic_id, min_x, min_y, max_x, max_y):
             mosaic_id, min_x, min_y, max_x, max_y))
     mosaics_response = session.get(bb_query_url, timeout=5.0)
     mosaics_json = mosaics_response.json()
-    LOGGER.debug(mosaics_response, mosaics_json)
+    LOGGER.debug('%s: %s', mosaics_response, mosaics_json)
     quad_id_list = []
     while True:
         quad_id_list.extend(
@@ -230,6 +235,21 @@ def copy_from_gs(gs_uri, target_path):
         (gs_uri, target_path), shell=True)
 
 
+def make_global_poly(vector_url):
+    vector_path = os.path.join(CHURN_DIR, os.path.basename(vector_url))
+    copy_from_gs(vector_url, vector_path)
+    vector = gdal.OpenEx(vector_path, gdal.OF_VECTOR)
+    layer = vector.GetLayer()
+    shapely_list = []
+    for feature in layer:
+        shapely_list.append(
+            shapely.wkb.loads(feature.GetGeometryRef().ExportToWkb()))
+        feature = None
+    LOGGER.debug('global unary')
+    global_shapely = shapely.ops.unary_union(shapely_list)
+    return global_shapely
+
+
 if __name__ == '__main__':
     for dir_path in [WORKSPACE_DIR, ECOSHARD_DIR, CHURN_DIR, QUAD_DIR]:
         try:
@@ -248,23 +268,37 @@ if __name__ == '__main__':
 
     country_borders_vector_path = os.path.join(
         ECOSHARD_DIR, os.path.basename(COUNTRY_BORDER_VECTOR_URI))
-    country_borders_dl_task = task_graph.add_task(
-        func=copy_from_gs,
-        args=(
-            COUNTRY_BORDER_VECTOR_URI,
-            country_borders_vector_path),
-        task_name='download country borders vector',
-        target_path_list=[country_borders_vector_path])
-    country_borders_dl_task.join()
+    task_graph.add_task(
+        func=create_status_database,
+        args=(DATABASE_PATH,),
+        target_path_list=[DATABASE_PATH],
+        task_name='create database')
+
+    global_poly_task = task_graph.add_task(
+        func=make_global_poly,
+        args=(COUNTRY_BORDER_VECTOR_URI,),
+        task_name='make global poly')
+    task_graph.join()
+
+    LOGGER.debug('load countries to shapely')
+
+    LOGGER.debug('global prep')
+    global_shapely_prep = shapely.prepared.prep(global_poly_task.get())
+    LOGGER.debug('start quad search')
 
     for lat in range(-60, 60):
         for lng in range(-180, 180):
+            query_box = shapely.geometry.box(lng, lat, lng+1, lat+1)
+            if not global_shapely_prep.intersects(query_box):
+                continue
             quad_id_list = get_quad_ids(
-                session, MOSAIC_ID, lat, lng, lat+1, lng+1)
+                session, MOSAIC_ID, lng, lat, lng+1, lat+1)
+            LOGGER.debug('%d %d %s', lat, lng, str(quad_id_list))
             for quad_id in quad_id_list:
                 fetch_quad(
                     session, DATABASE_PATH, planet_api_key, MOSAIC_ID, quad_id,
                     QUAD_DIR)
+                sys.exit(0)
 
     task_graph.close()
     task_graph.join()
