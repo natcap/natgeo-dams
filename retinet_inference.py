@@ -10,6 +10,7 @@ from keras_retinanet import models
 from keras_retinanet.preprocessing.csv_generator import CSVGenerator
 from keras_retinanet.utils.anchors import make_shapes_callback
 from keras_retinanet.utils.eval import evaluate
+from keras_retinanet.utils.eval import _get_detections
 from keras_retinanet.utils.gpu import setup_gpu
 from keras_retinanet.utils.keras_version import check_keras_version
 from keras_retinanet.utils.tf_version import check_tf_version
@@ -109,47 +110,52 @@ def main(args=None):
     # print(model.summary())
 
     # start evaluation
-    if args.dataset_type == 'coco':
-        from ..utils.coco_eval import evaluate_coco
-        evaluate_coco(generator, model, args.score_threshold)
-    else:
-        average_precisions, inference_time = evaluate(
-            generator,
-            model,
-            iou_threshold=args.iou_threshold,
-            score_threshold=args.score_threshold,
-            max_detections=args.max_detections,
-            save_path=args.save_path
-        )
 
-        # print evaluation
-        total_instances = []
-        precisions = []
-        for label, (average_precision, num_annotations) in \
-                average_precisions.items():
-            print(
-                '{:.0f} instances of class'.format(num_annotations),
-                generator.label_to_name(label),
-                'with average precision: {:.4f}'.format(average_precision))
-            total_instances.append(num_annotations)
-            precisions.append(average_precision)
+    all_detections, all_inferences = _get_detections(
+        generator, model, score_threshold=args.score_threshold,
+        max_detections=args.max_detections, save_path=None)
 
-        if sum(total_instances) == 0:
-            print('No test instances found.')
-            return
+    print(all_detections)
+    print(all_inferences)
 
-        print(
-            'Inference time for {:.0f} images: {:.4f}'.format(
-                generator.size(), inference_time))
 
-        print(
-            'mAP using the weighted average of precisions among classes: '
-            '{:.4f}'.format(
-                sum([a * b for a, b in zip(total_instances, precisions)]) /
-                sum(total_instances)))
-        print(
-            'mAP: {:.4f}'.format(
-                sum(precisions) / sum(x > 0 for x in total_instances)))
+    # average_precisions, inference_time = evaluate(
+    #     generator,
+    #     model,
+    #     iou_threshold=args.iou_threshold,
+    #     score_threshold=args.score_threshold,
+    #     max_detections=args.max_detections,
+    #     save_path=args.save_path
+    # )
+
+    # # print evaluation
+    # total_instances = []
+    # precisions = []
+    # for label, (average_precision, num_annotations) in \
+    #         average_precisions.items():
+    #     print(
+    #         '{:.0f} instances of class'.format(num_annotations),
+    #         generator.label_to_name(label),
+    #         'with average precision: {:.4f}'.format(average_precision))
+    #     total_instances.append(num_annotations)
+    #     precisions.append(average_precision)
+
+    # if sum(total_instances) == 0:
+    #     print('No test instances found.')
+    #     return
+
+    # print(
+    #     'Inference time for {:.0f} images: {:.4f}'.format(
+    #         generator.size(), inference_time))
+
+    # print(
+    #     'mAP using the weighted average of precisions among classes: '
+    #     '{:.4f}'.format(
+    #         sum([a * b for a, b in zip(total_instances, precisions)]) /
+    #         sum(total_instances)))
+    # print(
+    #     'mAP: {:.4f}'.format(
+    #         sum(precisions) / sum(x > 0 for x in total_instances)))
 
 
 if __name__ == '__main__':
