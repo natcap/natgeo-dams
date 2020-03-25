@@ -182,7 +182,8 @@ def fetch_quad(
         sqlite_update_variables.append(quad_uri)
 
         subprocess.run(
-            'gsutil mv %s %s' % (local_quad_path, quad_uri),
+            '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil mv %s %s' % (
+                local_quad_path, quad_uri),
             shell=True, check=True)
 
         _execute_sqlite(
