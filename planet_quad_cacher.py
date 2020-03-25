@@ -158,7 +158,7 @@ def fetch_quad(
     try:
         count = _execute_sqlite(
             '''
-            SELECT count(*)
+            SELECT count(quad_id)
             FROM quad_cache_table
             WHERE quad_id=?;
             ''', quad_database_path, argument_list=[quad_id], fetch='one')
@@ -166,7 +166,6 @@ def fetch_quad(
         return
         if count[0] > 0:
             LOGGER.debug('already fetched %s', quad_id)
-            return
 
         get_quad_url = (
             f'https://api.planet.com/basemaps/v1/mosaics/'
