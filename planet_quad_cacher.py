@@ -193,13 +193,10 @@ def fetch_quad(
 
         try:
             subprocess.run(
-                '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil ls %s' %
-                quad_uri, shell=True, check=True)
-            subprocess.run(
                 '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil mv %s %s'
                 % (local_quad_path, quad_uri), shell=True, check=True)
         except subprocess.CalledProcessError:
-            LOGGER.exception('file might already exist')
+            LOGGER.warning('file might already exist')
 
         LOGGER.debug(
             'update sqlite table with these args: %s', sqlite_update_variables)
@@ -212,8 +209,6 @@ def fetch_quad(
             ''', quad_database_path,
             mode='modify', execute='execute',
             argument_list=sqlite_update_variables)
-
-        return True
     except Exception:
         LOGGER.exception('error on quad %s' % quad_id)
         raise
