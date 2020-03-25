@@ -162,6 +162,8 @@ def fetch_quad(
             FROM quad_cache_table
             WHERE quad_id=?;
             ''', quad_database_path, argument_list=[quad_id], fetch='one')
+        LOGGER.debug(count)
+        return
         if count[0] > 0:
             LOGGER.debug('already fetched %s', quad_id)
             return
