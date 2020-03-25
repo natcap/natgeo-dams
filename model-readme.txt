@@ -14,7 +14,7 @@ Model: https://github.com/fizyr/keras-retinanet
 * This Docker image has Tensorflow 2.1.0 installed w/ GPU support, gsutils, and keras-retinanet
     * docker build dockerfile-dir -f dockerfile-dir/docker-gpu -t natcap/dam-inference-server-gpu:0.0.1 && docker run -it --rm -v `pwd`:/usr/local/natgeo_dams --gpus all natcap/dam-inference-server-gpu:0.0.1 python
 
-    * git pull && docker build dockerfile-dir -f dockerfile-dir/docker-gpu -t natcap/dam-inference-server-gpu:0.0.1 && docker run -it --rm -v `pwd`:/usr/local/natgeo_dams --gpus all natcap/dam-inference-server-gpu:0.0.1 "bash -c retinanet-train --gpu 0  --initial-epoch 14 --multiprocessing csv ./training_data/annotations.csv ./training_data/classes.csv
+    * git pull && docker build dockerfile-dir -f dockerfile-dir/docker-gpu -t natcap/dam-inference-server-gpu:0.0.1 && docker run -it --rm -v `pwd`:/usr/local/natgeo_dams --gpus all natcap/dam-inference-server-gpu:0.0.1 "bash -c retinanet-train --gpu 0  --initial-epoch 50 --epochs 100 --multiprocessing csv ./training_data/annotations.csv ./training_data/classes.csv
 
     * manually:  retinanet-train --gpu 0 --multiprocessing --workers 4 --batch-size 4 csv ./training_data/no_ZAF_annotations.csv ./training_data/classes.csv
 
