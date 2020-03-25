@@ -300,6 +300,8 @@ if __name__ == '__main__':
             quad_id_list = get_quad_ids(
                 session, MOSAIC_ID, lng, lat, lng+1, lat+1)
             LOGGER.debug('%d %d %s', lat, lng, str(quad_id_list))
+            if not quad_id_list:
+                continue
             for quad_id in quad_id_list:
                 fetch_quad(
                     session, DATABASE_PATH, planet_api_key, MOSAIC_ID, quad_id,
