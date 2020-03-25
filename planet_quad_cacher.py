@@ -311,7 +311,6 @@ def main():
                 fetch_quad(
                     session, DATABASE_PATH, planet_api_key, MOSAIC_ID, quad_id,
                     QUAD_DIR)
-            return
 
     LOGGER.debug('ALL DONE!')
 
