@@ -307,6 +307,8 @@ def main():
                 continue
             quad_id_list = get_quad_ids(
                 session, MOSAIC_ID, lng, lat, lng+1, lat+1)
+            if not quad_id_list:
+                continue
             LOGGER.debug('%d %d %s', lat, lng, str(quad_id_list))
             for quad_id in quad_id_list:
                 fetch_quad(
