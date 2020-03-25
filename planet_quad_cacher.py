@@ -181,11 +181,19 @@ def fetch_quad(
             pathlib.Path(local_quad_path).stat().st_size)
         sqlite_update_variables.append(quad_uri)
 
-        subprocess.run(
-            '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil mv %s %s' % (
-                local_quad_path, quad_uri),
-            shell=True, check=True)
+        try:
+            ls_result = subprocess.run(
+                'gsutil ls %s' % quad_uri, capture_output=True, shell=True,
+                check=True)
+            LOGGER.debug(ls_result)
+            subprocess.run(
+                '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil mv %s %s'
+                % (local_quad_path, quad_uri), shell=True, check=True)
+        except subprocess.CalledProcessError:
+            LOGGER.exception('file might already exist')
 
+        LOGGER.debug(
+            'update sqlite table with these args: %s', sqlite_update_variables)
         _execute_sqlite(
             '''
             INSERT INTO quad_cache_table
@@ -296,7 +304,10 @@ if __name__ == '__main__':
                 fetch_quad(
                     session, DATABASE_PATH, planet_api_key, MOSAIC_ID, quad_id,
                     QUAD_DIR)
-                sys.exit(0)
+                break
+            break
+        break
 
     task_graph.close()
     task_graph.join()
+    LOGGER.debug('ALL DONE!')
