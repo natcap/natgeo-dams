@@ -168,7 +168,7 @@ def fetch_quad(
         download_url = (quads_json.json())['_links']['download']
         local_quad_path = os.path.join(cache_dir, '%s.tif' % quad_id)
         quad_uri = (
-            'gs://natgeo-dams-data/known-dam-quads/%s' %
+            'gs://natgeo-dams-data/cached-planet-quads/%s' %
             os.path.basename(local_quad_path))
 
         ecoshard.download_url(download_url, local_quad_path)
