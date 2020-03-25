@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from osgeo import gdal
+from osgeo import osr
 import ecoshard
 import pygeoprocessing
 import requests
@@ -31,6 +32,10 @@ COUNTRY_BORDER_VECTOR_URI = (
 MOSAIC_ID = '4ce5863a-fb3f-4cad-a899-b8c053af1858'
 PLANET_API_KEY_FILE = 'planet_api_key.txt'
 REQUEST_TIMEOUT = 1.5
+
+_WGS84_SRS = osr.SpatialReference()
+_WGS84_SRS.ImportFromEPSG(4326)
+WGS84_WKT = _WGS84_SRS.ExportToWkt()
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -174,9 +179,14 @@ def fetch_quad(
         ecoshard.download_url(download_url, local_quad_path)
         local_quad_info = pygeoprocessing.get_raster_info(local_quad_path)
 
+        lng_lat_bb = pygeoprocessing.transform_bounding_box(
+            local_quad_info['bounding_box'],
+            local_quad_info['projection'],
+            WGS84_WKT)
+
         sqlite_update_variables = []
         sqlite_update_variables.append(quad_id)
-        sqlite_update_variables.extend(local_quad_info['bounding_box'])
+        sqlite_update_variables.extend(lng_lat_bb)
         sqlite_update_variables.append(  # file size in bytes
             pathlib.Path(local_quad_path).stat().st_size)
         sqlite_update_variables.append(quad_uri)
@@ -193,7 +203,7 @@ def fetch_quad(
             'update sqlite table with these args: %s', sqlite_update_variables)
         _execute_sqlite(
             '''
-            INSERT INTO quad_cache_table
+            INSERT OR REPLACE INTO quad_cache_table
                 (quad_id, long_min, lat_min, long_max, lat_max, file_size,
                  gs_uri)
             VALUES (?, ?, ?, ?, ?, ?, ?);
