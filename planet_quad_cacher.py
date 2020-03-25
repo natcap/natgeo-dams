@@ -258,7 +258,7 @@ def make_global_poly(vector_url):
     return global_shapely
 
 
-if __name__ == '__main__':
+def main():
     for dir_path in [WORKSPACE_DIR, ECOSHARD_DIR, CHURN_DIR, QUAD_DIR]:
         try:
             os.makedirs(dir_path)
@@ -284,6 +284,7 @@ if __name__ == '__main__':
         func=make_global_poly,
         args=(COUNTRY_BORDER_VECTOR_URI,),
         task_name='make global poly')
+    task_graph.close()
     task_graph.join()
 
     LOGGER.debug('load countries to shapely')
@@ -300,16 +301,14 @@ if __name__ == '__main__':
             quad_id_list = get_quad_ids(
                 session, MOSAIC_ID, lng, lat, lng+1, lat+1)
             LOGGER.debug('%d %d %s', lat, lng, str(quad_id_list))
-            if not quad_id_list:
-                continue
             for quad_id in quad_id_list:
                 fetch_quad(
                     session, DATABASE_PATH, planet_api_key, MOSAIC_ID, quad_id,
                     QUAD_DIR)
-                break
-            break
-        break
+                return
 
-    task_graph.close()
-    task_graph.join()
     LOGGER.debug('ALL DONE!')
+
+
+if __name__ == '__main__':
+    main()
