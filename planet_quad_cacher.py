@@ -230,8 +230,7 @@ def copy_from_gs(gs_uri, target_path):
     except Exception:
         pass
     subprocess.run(
-        #'/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
-        'gsutil cp %s %s' %
+        '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
         (gs_uri, target_path), shell=True)
 
 
@@ -266,8 +265,6 @@ if __name__ == '__main__':
 
     task_graph = taskgraph.TaskGraph(CHURN_DIR, -1, 5.0)
 
-    country_borders_vector_path = os.path.join(
-        ECOSHARD_DIR, os.path.basename(COUNTRY_BORDER_VECTOR_URI))
     task_graph.add_task(
         func=create_status_database,
         args=(DATABASE_PATH,),
