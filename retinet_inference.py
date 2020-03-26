@@ -215,7 +215,7 @@ def main(args=None):
         box_score_tuple_list = [
             (list(box), score[0]) for box, score in zip(boxes[0], scores)
             if score[0] > 0]
-        print(len(box_score_tuple_list))
+        print('%s: %s' % (str(scores), len(box_score_tuple_list)))
         while box_score_tuple_list:
             box, score = box_score_tuple_list.pop()
             shapely_box = shapely.geometry.box(*box)
