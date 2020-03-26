@@ -163,7 +163,8 @@ def main(args=None):
     with open(args.annotations, 'r') as annotations_file:
         for line in annotations_file:
             filename_re = re.match('^([^,]+),', line)
-            print(filename_re)
+            if filename_re:
+                print(filename_re.group(1))
     sys.exit(0)
 
     # load the model
