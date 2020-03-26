@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 
+import cv2
 import keras
 from keras_retinanet import models
 from keras_retinanet.preprocessing.csv_generator import CSVGenerator
@@ -16,6 +17,35 @@ from keras_retinanet.utils.gpu import setup_gpu
 from keras_retinanet.utils.keras_version import check_keras_version
 from keras_retinanet.utils.tf_version import check_tf_version
 import numpy
+
+
+def draw_box(image, box, color, thickness):
+    """ Draws a box on an image with a given color.
+    # Arguments
+        image     : The image to draw on.
+        box       : A list of 4 elements (x1, y1, x2, y2).
+        color     : The color of the box.
+        thickness : The thickness of the lines to draw a box with.
+    """
+    b = numpy.array(box).astype(int)
+    cv2.rectangle(
+        image, (b[0], b[1]), (b[2], b[3]), color, thickness)
+
+
+def draw_caption(image, box, caption):
+    """ Draws a caption above the box in an image.
+    # Arguments
+        image   : The image to draw on.
+        box     : A list of 4 elements (x1, y1, x2, y2).
+        caption : String containing the text to draw.
+    """
+    b = numpy.array(box).astype(int)
+    cv2.putText(
+        image, caption, (b[0], b[1] - 10), cv2.FONT_HERSHEY_PLAIN, 1,
+        (0, 0, 0), 2)
+    cv2.putText(
+        image, caption, (b[0], b[1] - 10), cv2.FONT_HERSHEY_PLAIN, 1,
+        (255, 255, 255), 1)
 
 
 def create_generator(args, preprocess_image):
@@ -117,10 +147,21 @@ def main(args=None):
         boxes, scores, labels = model.predict_on_batch(
             numpy.expand_dims(image, axis=0))[:3]
 
+        # correct boxes for image scale
+        boxes /= scale
+
         print(boxes)
         print(scores)
         print(labels)
-        break
+
+        for box, score, label in zip(boxes, scores, labels):
+            if score < 0:
+                break
+            draw_box(raw_image, box, (255, 102, 179), 1)
+            draw_caption(raw_image, box, str(score))
+
+            cv2.imwrite(
+                os.path.join(args.save_path, '%d.png' % i), raw_image)
 
     # generator.compute_shapes = make_shapes_callback(model)
 
