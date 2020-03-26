@@ -164,6 +164,7 @@ def main(args=None):
         for line in annotations_file:
             filename_re = re.match('^([^,]+),', line)
             print(filename_re)
+    sys.exit(0)
 
     # load the model
     # make sure keras and tensorflow are the minimum required version
