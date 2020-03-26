@@ -253,7 +253,6 @@ def main(args=None):
             raw_image)
     print('total_detections: %d' % total_detections)
     print('found_dams: %d' % found_dams)
-    print('number of images: %d' % )
     # generator.compute_shapes = make_shapes_callback(model)
 
     # # print model summary
