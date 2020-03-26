@@ -346,7 +346,7 @@ def main():
 
     task_graph.add_task(
         func=create_work_database,
-        args=(WORK_DATABASE_PATH,),
+        args=(country_borders_vector_path, WORK_DATABASE_PATH,),
         hash_target_files=False,
         target_path_list=[country_borders_vector_path, WORK_DATABASE_PATH],
         dependent_task_list=[country_borders_dl_task],
