@@ -177,11 +177,6 @@ def main(args=None):
                 file_to_bounding_box_list[file_path].append(
                     shapely.geometry.box(
                         *[int(filename_re.group(i)) for i in range(2, 6)]))
-    print(file_to_bounding_box_list)
-    for bb_list in file_to_bounding_box_list.values():
-        print(len(bb_list))
-
-    return
     # load the model
     # make sure keras and tensorflow are the minimum required version
     check_keras_version()
