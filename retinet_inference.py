@@ -155,10 +155,10 @@ def main(args=None):
         print(labels)
 
         for box, score, label in zip(boxes, scores, labels):
-            if score < 0:
+            if score[0] < 0:
                 break
             draw_box(raw_image, box, (255, 102, 179), 1)
-            draw_caption(raw_image, box, str(score))
+            draw_caption(raw_image, box, str(score[0]))
 
             cv2.imwrite(
                 os.path.join(args.save_path, '%d.png' % i), raw_image)
