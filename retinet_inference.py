@@ -168,7 +168,7 @@ def main(args=None):
                 r'^([^,]+),(\d+),(\d+),(\d+),(\d+),', line)
             if filename_re:
                 file_to_bounding_box_list[filename_re.group(1)].append(
-                    [float(filename_re.group(i)) for i in range(2, 7)])
+                    [float(filename_re.group(i)) for i in range(2, 6)])
     print(file_to_bounding_box_list)
     sys.exit(0)
 
