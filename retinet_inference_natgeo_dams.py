@@ -47,6 +47,8 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 logging.getLogger('taskgraph').setLevel(logging.INFO)
 
+ISO_CODES_TO_SKIP = ['ATA']
+
 
 def compute_resize_scale(image_shape, min_side=800, max_side=1333):
     """ Compute an image scale size to constrained to min_side/max_side.
@@ -297,6 +299,8 @@ def create_work_database(country_vector_path, target_work_database_path):
                 if country_geom_list[country_id].intersects(grid_box):
                     intersecting_country_list.append(
                         country_iso3_list[country_id])
+            if ISO_CODES_TO_SKIP in intersecting_country_list:
+                continue
             if intersecting_country_list:
                 grid_insert_args.append((
                     grid_id, lng_min, lat_max-1, lng_min+1, lat_max,
@@ -363,14 +367,14 @@ def main():
         SELECT grid_id, lng_min, lat_min, lng_max, lat_max
         FROM work_status
         WHERE country_list LIKE "%ZAF%" AND processed=0
-        ''', WORK_DATABASE_PATH, argument_list=[])
+        ''', WORK_DATABASE_PATH, argument_list=[], fetch='all')
 
     work_grid_list.append(
         _execute_sqlite('''
             SELECT grid_id, lng_min, lat_min, lng_max, lat_max
             FROM work_status
             WHERE country_list NOT LIKE "%ZAF%" AND processed=0
-            ''', WORK_DATABASE_PATH, argument_list=[]))
+            ''', WORK_DATABASE_PATH, argument_list=[], fetch='all'))
 
     LOGGER.debug(work_grid_list)
 
