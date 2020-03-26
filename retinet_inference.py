@@ -169,12 +169,14 @@ def main(args=None):
         os.makedirs(args.save_path)
 
     file_to_bounding_box_list = collections.defaultdict(list)
+    annotations_dir = os.path.relpath(args.annotations)
     with open(args.annotations, 'r') as annotations_file:
         for line in annotations_file:
             filename_re = re.match(
                 r'^([^,]+),(\d+),(\d+),(\d+),(\d+),', line)
             if filename_re:
-                file_to_bounding_box_list[filename_re.group(1)].append(
+                file_path = os.path.join(annotations_dir, filename_re.group(1))
+                file_to_bounding_box_list[file_path].append(
                     [int(filename_re.group(i)) for i in range(2, 6)])
     print(file_to_bounding_box_list)
 
