@@ -242,10 +242,10 @@ def create_work_database(country_vector_path, target_work_database_path):
             country_list TEXT NOT NULL,
             processed INT NOT NULL);
 
-        CREATE INDEX lng_min_index ON work_status (lng_min);
-        CREATE INDEX lat_min_index ON work_status (lat_min);
-        CREATE INDEX lng_max_index ON work_status (lng_max);
-        CREATE INDEX lat_max_index ON work_status (lat_max);
+        CREATE INDEX lng_min_work_status_index ON work_status (lng_min);
+        CREATE INDEX lat_min_work_status_index ON work_status (lat_min);
+        CREATE INDEX lng_max_work_status_index ON work_status (lng_max);
+        CREATE INDEX lat_max_work_status_index ON work_status (lat_max);
 
         CREATE TABLE detected_dams (
             lng_min REAL NOT NULL,
@@ -255,10 +255,10 @@ def create_work_database(country_vector_path, target_work_database_path):
             probability REAL NOT NULL,
             country_list TEXT NOT NULL);
 
-        CREATE INDEX lng_min_index ON detected_dams (lng_min);
-        CREATE INDEX lat_min_index ON detected_dams (lat_min);
-        CREATE INDEX lng_max_index ON detected_dams (lng_max);
-        CREATE INDEX lat_max_index ON detected_dams (lat_max);
+        CREATE INDEX lng_min_detected_dams_index ON detected_dams (lng_min);
+        CREATE INDEX lat_min_detected_dams_index ON detected_dams (lat_min);
+        CREATE INDEX lng_max_detected_dams_index ON detected_dams (lng_max);
+        CREATE INDEX lat_max_detected_dams_index ON detected_dams (lat_max);
         """)
     if os.path.exists(target_work_database_path):
         os.remove(target_work_database_path)
