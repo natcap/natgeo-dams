@@ -211,24 +211,23 @@ def main(args=None):
         non_max_supression_box_list = []
         # convert box to a list from a numpy array and score to a value from
         # a single element array
-        box_score_tuple_set = set(
-            [(list(box), score[0]) for box, score in zip(boxes[0], scores)
-             if score[0] > 0])
-        while box_score_tuple_set:
-            box, score = next(iter(box_score_tuple_set))
-            box_score_tuple_set.remove((box, score))
-
+        box_score_tuple_list = [
+            (list(box), score[0]) for box, score in zip(boxes[0], scores)
+            if score[0] > 0]
+        while box_score_tuple_list:
+            box, score = box_score_tuple_list.pop()
             shapely_box = shapely.geometry.box(*box)
 
-            for test_box, test_score in list(box_score_tuple_set):
+            # this list makes a copy
+            for test_box, test_score in list(box_score_tuple_list):
                 shapely_test_box = shapely.box(*test_box)
                 if shapely_test_box.intersects(shapely_box):
                     # we can remove this one too
-                    box_score_tuple_set.remove((test_box, test_score))
+                    box_score_tuple_list.remove((test_box, test_score))
                     if test_score > score:
                         # keep the new one
                         score = test_score
-                        shapely_box = shapely_test_box
+                        box = test_box
             non_max_supression_box_list.append((box, score))
 
         for box, score in non_max_supression_box_list:
