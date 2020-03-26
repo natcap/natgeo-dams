@@ -209,13 +209,13 @@ def main(args=None):
         # correct boxes for image scale
         boxes /= scale
 
+        print('boxes: %s\nscores: %s\n' % (str(boxes), str(scores)))
         non_max_supression_box_list = []
         # convert box to a list from a numpy array and score to a value from
         # a single element array
         box_score_tuple_list = [
-            (list(box), score[0]) for box, score in zip(boxes, scores)
+            (list(box), score) for box, score in zip(boxes[0], scores[0])
             if score[0] > 0]
-        print('%s: %s' % (str(scores), len(box_score_tuple_list)))
         while box_score_tuple_list:
             box, score = box_score_tuple_list.pop()
             shapely_box = shapely.geometry.box(*box)
