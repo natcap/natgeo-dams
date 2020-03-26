@@ -177,9 +177,9 @@ def main(args=None):
             if filename_re:
                 file_path = os.path.join(annotations_dir, filename_re.group(1))
                 print(file_path)
-                file_to_bounding_box_list[file_path].append(
-                    shapely.geometry.box(
-                        *[int(filename_re.group(i)) for i in range(2, 6)]))
+                # file_to_bounding_box_list[file_path].append(
+                #     shapely.geometry.box(
+                #         *[int(filename_re.group(i)) for i in range(2, 6)]))
 
     # load the model
     # make sure keras and tensorflow are the minimum required version
