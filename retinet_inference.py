@@ -237,6 +237,7 @@ def main(args=None):
             detected_box = shapely.geometry.box(*box)
             color = (255, 102, 179)
             for box in bounding_box_list:
+                draw_box(raw_image, box.bounds, (0, 0, 255), 1)
                 if box.intersects(detected_box):
                     found_dams += 1
                     color = (0, 200, 0)
