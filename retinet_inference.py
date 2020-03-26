@@ -213,7 +213,7 @@ def main(args=None):
         # convert box to a list from a numpy array and score to a value from
         # a single element array
         box_score_tuple_list = [
-            (list(box), score[0]) for box, score in zip(boxes[0], scores)
+            (list(box), score[0]) for box, score in zip(boxes, scores)
             if score[0] > 0]
         print('%s: %s' % (str(scores), len(box_score_tuple_list)))
         while box_score_tuple_list:
