@@ -240,7 +240,7 @@ def main(args=None):
                     found_dams += 1
                     break
             draw_box(raw_image, detected_box.bounds, (255, 102, 179), 1)
-            draw_caption(raw_image, detected_box.bounds, str(score[0]))
+            draw_caption(raw_image, detected_box.bounds, str(score))
 
         cv2.imwrite(
             os.path.join(
