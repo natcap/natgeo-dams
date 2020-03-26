@@ -57,7 +57,7 @@ def read_image_bgr(path):
 def preprocess_image(x, mode='caffe'):
     """ Preprocess an image by subtracting the ImageNet mean.
     Args
-        x: np.array of shape (None, None, 3) or (3, None, None).
+        x: numpy.array of shape (None, None, 3) or (3, None, None).
         mode: One of "caffe" or "tf".
             - caffe: will zero-center each color channel with
                 respect to the ImageNet dataset, without scaling.
@@ -69,7 +69,7 @@ def preprocess_image(x, mode='caffe'):
     # except for converting RGB -> BGR since we assume BGR already
 
     # covert always to float32 to keep compatibility with opencv
-    x = x.astype(np.float32)
+    x = x.astype(numpy.float32)
 
     if mode == 'tf':
         x /= 127.5
