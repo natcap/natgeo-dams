@@ -176,6 +176,7 @@ def main(args=None):
             filename_re = re.match(r'^([^,]+),,,,,', line)
             if filename_re:
                 file_path = os.path.join(annotations_dir, filename_re.group(1))
+                file_to_bounding_box_list[file_path] = []
                 print(file_path)
                 # file_to_bounding_box_list[file_path].append(
                 #     shapely.geometry.box(
