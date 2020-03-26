@@ -178,7 +178,10 @@ def main(args=None):
                     shapely.geometry.box(
                         *[int(filename_re.group(i)) for i in range(2, 6)]))
     print(file_to_bounding_box_list)
+    for bb_list in file_to_bounding_box_list.values():
+        print(len(bb_list))
 
+    return
     # load the model
     # make sure keras and tensorflow are the minimum required version
     check_keras_version()
@@ -250,6 +253,7 @@ def main(args=None):
             raw_image)
     print('total_detections: %d' % total_detections)
     print('found_dams: %d' % found_dams)
+    print('number of images: %d' % )
     # generator.compute_shapes = make_shapes_callback(model)
 
     # # print model summary
