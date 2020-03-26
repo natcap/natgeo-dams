@@ -169,7 +169,7 @@ def main(args=None):
         os.makedirs(args.save_path)
 
     file_to_bounding_box_list = collections.defaultdict(list)
-    annotations_dir = os.path.relpath(args.annotations)
+    annotations_dir = os.path.relpath(os.path.dirname(args.annotations))
     with open(args.annotations, 'r') as annotations_file:
         for line in annotations_file:
             filename_re = re.match(
