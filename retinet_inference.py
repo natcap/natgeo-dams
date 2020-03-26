@@ -28,8 +28,11 @@ def draw_box(image, box, color, thickness):
         thickness : The thickness of the lines to draw a box with.
     """
     b = numpy.array(box).astype(int)
-    cv2.rectangle(
-        image, (b[0], b[1]), (b[2], b[3]), color, thickness)
+    print(image)
+    print(b)
+    print(color)
+    print(thickness)
+    cv2.rectangle(image, (b[0], b[1]), (b[2], b[3]), color, thickness)
 
 
 def draw_caption(image, box, caption):
@@ -157,7 +160,7 @@ def main(args=None):
         for box, score, label in zip(boxes, scores, labels):
             if score[0] < 0:
                 break
-            draw_box(raw_image, box, 0x00FF00, 1)
+            draw_box(raw_image, box, (255, 102, 179), 1)
             draw_caption(raw_image, box, str(score[0]))
 
             cv2.imwrite(
