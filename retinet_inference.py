@@ -165,7 +165,7 @@ def main(args=None):
     with open(args.annotations, 'r') as annotations_file:
         for line in annotations_file:
             filename_re = re.match(
-                '^([^,][^,]+,([^,]+),([^,]+),([^,]+),+),', line)
+                r'^([^,]+),(\d+),(\d+),(\d+),(\d+),', line)
             if filename_re:
                 file_to_bounding_box_list[filename_re.group(1)].append(
                     [float(filename_re.group(i)) for i in range(2, 7)])
