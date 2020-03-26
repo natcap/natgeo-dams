@@ -170,6 +170,7 @@ def main(args=None):
     annotations_dir = os.path.relpath(os.path.dirname(args.annotations))
     with open(args.annotations, 'r') as annotations_file:
         for line in annotations_file:
+            print(line)
             # filename_re = re.match(
             #     r'^([^,]+),(\d+),(\d+),(\d+),(\d+),', line)
             filename_re = re.match(r'^([^,]+),,,,,', line)
