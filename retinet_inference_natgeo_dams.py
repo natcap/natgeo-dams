@@ -237,7 +237,7 @@ def create_work_database(country_vector_path, target_work_database_path):
         CREATE TABLE work_status (
             lng_min REAL NOT NULL,
             lat_min REAL NOT NULL,
-            lng_mag REAL NOT NULL,
+            lng_max REAL NOT NULL,
             lat_max REAL NOT NULL,
             country_list TEXT NOT NULL,
             processed INT NOT NULL);
@@ -250,7 +250,7 @@ def create_work_database(country_vector_path, target_work_database_path):
         CREATE TABLE detected_dams (
             lng_min REAL NOT NULL,
             lat_min REAL NOT NULL,
-            lng_mag REAL NOT NULL,
+            lng_max REAL NOT NULL,
             lat_max REAL NOT NULL,
             probability REAL NOT NULL,
             country_list TEXT NOT NULL);
