@@ -159,9 +159,9 @@ def main(args=None):
             draw_box(raw_image, box, (255, 102, 179), 1)
             draw_caption(raw_image, box, str(score[0]))
 
-            cv2.imwrite(
-                os.path.join(args.save_path, '%d.png' % i), raw_image)
-
+        cv2.imwrite(
+            os.path.join(args.save_path, '%d.png' % i), raw_image)
+        break
     # generator.compute_shapes = make_shapes_callback(model)
 
     # # print model summary
