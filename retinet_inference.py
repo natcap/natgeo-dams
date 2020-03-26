@@ -170,13 +170,16 @@ def main(args=None):
     annotations_dir = os.path.relpath(os.path.dirname(args.annotations))
     with open(args.annotations, 'r') as annotations_file:
         for line in annotations_file:
-            filename_re = re.match(
-                r'^([^,]+),(\d+),(\d+),(\d+),(\d+),', line)
+            # filename_re = re.match(
+            #     r'^([^,]+),(\d+),(\d+),(\d+),(\d+),', line)
+            filename_re = re.match(r'^([^,]+),,,,,', line)
             if filename_re:
                 file_path = os.path.join(annotations_dir, filename_re.group(1))
+                print(file_path)
                 file_to_bounding_box_list[file_path].append(
                     shapely.geometry.box(
                         *[int(filename_re.group(i)) for i in range(2, 6)]))
+
     # load the model
     # make sure keras and tensorflow are the minimum required version
     check_keras_version()
@@ -229,6 +232,10 @@ def main(args=None):
                         break
             if keep:
                 non_max_supression_box_list.append((box, score))
+
+        # no dams detected, just skip
+        if not non_max_supression_box_list:
+            continue
 
         caption_count = 0
         for box in bounding_box_list:
