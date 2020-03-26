@@ -208,9 +208,28 @@ def main(args=None):
         # correct boxes for image scale
         boxes /= scale
 
-        for box, score, label in zip(boxes[0], scores, labels):
-            if score[0] < 0:
-                break
+        non_max_supression_box_list = []
+        box_score_tuple_set = set(
+            [(box, score[0]) for box, score in zip(boxes[0], scores)
+             if score[0] > 0])
+        while box_score_tuple_set:
+            box, score = next(iter(box_score_tuple_set))
+            box_score_tuple_set.remove((box, score))
+
+            shapely_box = shapely.geometry.box(*box)
+
+            for test_box, test_score in list(box_score_tuple_set):
+                shapely_test_box = shapely.box(*test_box)
+                if shapely_test_box.intersects(shapely_box):
+                    # we can remove this one too
+                    box_score_tuple_set.remove((test_box, test_score))
+                    if test_score > score:
+                        # keep the new one
+                        score = test_score
+                        shapely_box = shapely_test_box
+            non_max_supression_box_list.append((box, score))
+
+        for box, score in non_max_supression_box_list:
             total_detections += 1
             print(box)
             detected_box = shapely.geometry.box(*box)
