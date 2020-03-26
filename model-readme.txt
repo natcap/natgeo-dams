@@ -21,6 +21,8 @@ Model: https://github.com/fizyr/keras-retinanet
 * To train:
     * note multi gpu doesn't seem to work
 
+* To run detection:
+    * git pull && python retinet_inference_natgeo_dams.py --gpu 0 ./natgeo_dams_model_resnet50_csv_64.h5
+
 Data: natgeo-dams-data bucket
 * gs://natgeo-dams-data/training_data holds the training data annotation.csv, classes.csv and the directory structure relative to them
-

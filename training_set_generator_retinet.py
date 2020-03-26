@@ -278,9 +278,6 @@ def process_quad(quad_uri, quad_id, dams_database_path):
         ul_i, lr_i = sorted([ul_i, lr_i])
         ul_j, lr_j = sorted([ul_j, lr_j])
 
-
-
-
         # possible the dam may lie outside of the quad, if so clip to the
         # edge of the quad
         if ul_j < 0:
