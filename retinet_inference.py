@@ -4,6 +4,7 @@ Adapted from: https://github.com/fizyr/keras-retinanet
 
 import argparse
 import os
+import re
 import sys
 
 import cv2
@@ -17,6 +18,58 @@ from keras_retinanet.utils.gpu import setup_gpu
 from keras_retinanet.utils.keras_version import check_keras_version
 from keras_retinanet.utils.tf_version import check_tf_version
 import numpy
+
+
+def compute_resize_scale(image_shape, min_side=800, max_side=1333):
+    """ Compute an image scale size to constrained to min_side/max_side.
+    Args
+        min_side: The image's min side will be equal to min_side after
+            resizing.
+        max_side: If after resizing the image's max side is above max_side,
+            resize until the max side is equal to max_side.
+    Returns
+        A resizing scale.
+    """
+    (rows, cols, _) = image_shape
+
+    smallest_side = min(rows, cols)
+
+    # rescale the image so the smallest side is min_side
+    scale = min_side / smallest_side
+
+    # check if the largest side is now greater than max_side, which can happen
+    # when images have a large aspect ratio
+    largest_side = max(rows, cols)
+    if largest_side * scale > max_side:
+        scale = max_side / largest_side
+
+    return scale
+
+
+def preprocess_image(x, mode='caffe'):
+    """ Preprocess an image by subtracting the ImageNet mean.
+    Args
+        x: np.array of shape (None, None, 3) or (3, None, None).
+        mode: One of "caffe" or "tf".
+            - caffe: will zero-center each color channel with
+                respect to the ImageNet dataset, without scaling.
+            - tf: will scale pixels between -1 and 1, sample-wise.
+    Returns
+        The input with the ImageNet mean subtracted.
+    """
+    # mostly identical to "https://github.com/keras-team/keras-applications/blob/master/keras_applications/imagenet_utils.py"
+    # except for converting RGB -> BGR since we assume BGR already
+
+    # covert always to float32 to keep compatibility with opencv
+    x = x.astype(np.float32)
+
+    if mode == 'tf':
+        x /= 127.5
+        x -= 1.
+    elif mode == 'caffe':
+        x -= [103.939, 116.779, 123.68]
+
+    return x
 
 
 def draw_box(image, box, color, thickness):
@@ -48,21 +101,6 @@ def draw_caption(image, box, caption):
     cv2.putText(
         image, caption, (b[0], b[1] - 10), cv2.FONT_HERSHEY_PLAIN, 1,
         (255, 255, 255), 1)
-
-
-def create_generator(args, preprocess_image):
-    """ Create retinet generator."""
-    common_args = {
-        'preprocess_image': preprocess_image,
-    }
-    validation_generator = CSVGenerator(
-        args.annotations,
-        args.classes,
-        image_min_side=args.image_min_side,
-        image_max_side=args.image_max_side,
-        shuffle_groups=False,
-        **common_args)
-    return validation_generator
 
 
 def parse_args(args):
@@ -118,6 +156,16 @@ def main(args=None):
         args = sys.argv[1:]
     args = parse_args(args)
 
+    # make save path if it doesn't exist
+    if args.save_path is not None and not os.path.exists(args.save_path):
+        os.makedirs(args.save_path)
+
+    with open(args.annotations, 'r') as annotations_file:
+        for line in annotations_file:
+            filename_re = re.match('^([^,]+),', line)
+            print(filename_re)
+
+    # load the model
     # make sure keras and tensorflow are the minimum required version
     check_keras_version()
     check_tf_version()
@@ -126,26 +174,19 @@ def main(args=None):
     if args.gpu:
         setup_gpu(args.gpu)
 
-    # make save path if it doesn't exist
-    if args.save_path is not None and not os.path.exists(args.save_path):
-        os.makedirs(args.save_path)
-
-    # create the generator
-    backbone = models.backbone(args.backbone)
-    generator = create_generator(args, backbone.preprocess_image)
-
-    # load the model
     print('Loading model, this may take a second...')
     model = models.load_model(args.model, backbone_name=args.backbone)
 
+    # iterate through each image
     for i in range(generator.size()):
         raw_image = generator.load_image(i)
-        image = generator.preprocess_image(raw_image.copy())
-        image, scale = generator.resize_image(image)
-
+        image = preprocess_image(raw_image.copy())
+        scale = compute_resize_scale(
+            image.shape, min_side=args.image_min_side,
+            max_side=args.image_max_side)
+        image = cv2.resize(image, None, fx=scale, fy=scale)
         if keras.backend.image_data_format() == 'channels_first':
             image = image.transpose((2, 0, 1))
-
         boxes, scores, labels = model.predict_on_batch(
             numpy.expand_dims(image, axis=0))[:3]
 
