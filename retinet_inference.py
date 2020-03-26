@@ -237,6 +237,7 @@ def main(args=None):
 
         # no dams detected, just skip
         if not non_max_supression_box_list:
+            print('nothing found')
             continue
 
         caption_count = 0
