@@ -215,7 +215,7 @@ def main(args=None):
         # a single element array
         box_score_tuple_list = [
             (list(box), score) for box, score in zip(boxes[0], scores[0])
-            if score > 0]
+            if score > 0.05]
         while box_score_tuple_list:
             box, score = box_score_tuple_list.pop()
             shapely_box = shapely.geometry.box(*box)
