@@ -152,7 +152,7 @@ def main(args=None):
         # correct boxes for image scale
         boxes /= scale
 
-        for box, score, label in zip(boxes, scores, labels):
+        for box, score, label in zip(boxes[0], scores, labels):
             if score[0] < 0:
                 break
             print(box)
