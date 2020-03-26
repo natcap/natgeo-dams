@@ -8,16 +8,13 @@ import os
 import re
 import sys
 
-import cv2
-import keras
 from keras_retinanet import models
-from keras_retinanet.preprocessing.csv_generator import CSVGenerator
-from keras_retinanet.utils.anchors import make_shapes_callback
-from keras_retinanet.utils.eval import evaluate
-from keras_retinanet.utils.eval import _get_detections
 from keras_retinanet.utils.gpu import setup_gpu
 from keras_retinanet.utils.keras_version import check_keras_version
 from keras_retinanet.utils.tf_version import check_tf_version
+import cv2
+import keras
+import PIL
 import numpy
 
 
@@ -45,6 +42,16 @@ def compute_resize_scale(image_shape, min_side=800, max_side=1333):
         scale = max_side / largest_side
 
     return scale
+
+
+def read_image_bgr(path):
+    """ Read an image in BGR format.
+    Args
+        path: Path to the image.
+    """
+    # We deliberately don't use cv2.imread here, since it gives no feedback on errors while reading the image.
+    image = numpy.asarray(PIL.Image.open(path).convert('RGB'))
+    return image[:, :, ::-1].copy()
 
 
 def preprocess_image(x, mode='caffe'):
@@ -168,9 +175,8 @@ def main(args=None):
                 r'^([^,]+),(\d+),(\d+),(\d+),(\d+),', line)
             if filename_re:
                 file_to_bounding_box_list[filename_re.group(1)].append(
-                    [float(filename_re.group(i)) for i in range(2, 6)])
+                    [int(filename_re.group(i)) for i in range(2, 6)])
     print(file_to_bounding_box_list)
-    sys.exit(0)
 
     # load the model
     # make sure keras and tensorflow are the minimum required version
@@ -185,8 +191,8 @@ def main(args=None):
     model = models.load_model(args.model, backbone_name=args.backbone)
 
     # iterate through each image
-    for i in range(generator.size()):
-        raw_image = generator.load_image(i)
+    for file_path, bounding_box_list in file_to_bounding_box_list.items():
+        raw_image = read_image_bgr(file_path)
         image = preprocess_image(raw_image.copy())
         scale = compute_resize_scale(
             image.shape, min_side=args.image_min_side,
@@ -196,7 +202,6 @@ def main(args=None):
             image = image.transpose((2, 0, 1))
         boxes, scores, labels = model.predict_on_batch(
             numpy.expand_dims(image, axis=0))[:3]
-
         # correct boxes for image scale
         boxes /= scale
 
@@ -208,7 +213,10 @@ def main(args=None):
             draw_caption(raw_image, box, str(score[0]))
 
         cv2.imwrite(
-            os.path.join(args.save_path, '%d.png' % i), raw_image)
+            os.path.join(
+                args.save_path, '%s_annotated.png' % (
+                    os.path.basename(os.path.splitext(file_path)[0])),
+                raw_image))
         break
     # generator.compute_shapes = make_shapes_callback(model)
 
