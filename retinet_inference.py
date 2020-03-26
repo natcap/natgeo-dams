@@ -16,6 +16,7 @@ import cv2
 import keras
 import PIL
 import numpy
+import shapely.geometry
 
 
 def compute_resize_scale(image_shape, min_side=800, max_side=1333):
@@ -89,9 +90,6 @@ def draw_box(image, box, color, thickness):
         thickness : The thickness of the lines to draw a box with.
     """
     b = numpy.array(box).astype(int)
-    print('B: %s' % str(b))
-    print(color)
-    print(thickness)
     cv2.rectangle(image, (b[0], b[1]), (b[2], b[3]), color, thickness)
 
 
@@ -177,7 +175,8 @@ def main(args=None):
             if filename_re:
                 file_path = os.path.join(annotations_dir, filename_re.group(1))
                 file_to_bounding_box_list[file_path].append(
-                    [int(filename_re.group(i)) for i in range(2, 6)])
+                    shapely.geometry.rectangle(
+                        *[int(filename_re.group(i)) for i in range(2, 6)]))
     print(file_to_bounding_box_list)
 
     # load the model
@@ -193,6 +192,8 @@ def main(args=None):
     model = models.load_model(args.model, backbone_name=args.backbone)
 
     # iterate through each image
+    found_dams = 0
+    total_detections = 0
     for file_path, bounding_box_list in file_to_bounding_box_list.items():
         raw_image = read_image_bgr(file_path)
         image = preprocess_image(raw_image.copy())
@@ -210,7 +211,14 @@ def main(args=None):
         for box, score, label in zip(boxes[0], scores, labels):
             if score[0] < 0:
                 break
+            total_detections += 1
             print(box)
+            detected_box = shapely.geometry.rectangle(*box)
+            for box in bounding_box_list:
+                if box.intersects(detected_box):
+                    print('got a hit')
+                    found_dams += 1
+                    break
             draw_box(raw_image, box, (255, 102, 179), 1)
             draw_caption(raw_image, box, str(score[0]))
 
@@ -220,6 +228,8 @@ def main(args=None):
                     os.path.basename(os.path.splitext(file_path)[0]))),
             raw_image)
         break
+    print(total_detections)
+    print(found_dams)
     # generator.compute_shapes = make_shapes_callback(model)
 
     # # print model summary
