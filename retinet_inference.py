@@ -219,8 +219,8 @@ def main(args=None):
                     print('got a hit')
                     found_dams += 1
                     break
-            draw_box(raw_image, box.bounds, (255, 102, 179), 1)
-            draw_caption(raw_image, box.bounds, str(score[0]))
+            draw_box(raw_image, detected_box.bounds, (255, 102, 179), 1)
+            draw_caption(raw_image, detected_box.bounds, str(score[0]))
 
         cv2.imwrite(
             os.path.join(
