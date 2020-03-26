@@ -7,6 +7,7 @@ import collections
 import logging
 import multiprocessing
 import os
+import pathlib
 import re
 import subprocess
 import sqlite3
@@ -24,6 +25,7 @@ import numpy
 import retrying
 import rtree
 import shapely.geometry
+import shapely.wkb
 import taskgraph
 
 
