@@ -237,6 +237,7 @@ def create_work_database(country_vector_path, target_work_database_path):
     create_database_sql = (
         """
         CREATE TABLE work_status (
+            grid_id INTEGER NOT NULL PRIMARY KEY,
             lng_min REAL NOT NULL,
             lat_min REAL NOT NULL,
             lng_max REAL NOT NULL,
@@ -250,6 +251,7 @@ def create_work_database(country_vector_path, target_work_database_path):
         CREATE INDEX lat_max_work_status_index ON work_status (lat_max);
 
         CREATE TABLE detected_dams (
+            dam_id INTEGER NOT NULL PRIMARY KEY,
             lng_min REAL NOT NULL,
             lat_min REAL NOT NULL,
             lng_max REAL NOT NULL,
@@ -284,6 +286,7 @@ def create_work_database(country_vector_path, target_work_database_path):
         country_iso3_list.append(country_feature.GetField('iso3'))
 
     grid_insert_args = []
+    grid_id = 0
     for lat_max in range(-60, 60):
         LOGGER.debug(lat_max)
         for lng_min in range(-180, 180):
@@ -296,15 +299,17 @@ def create_work_database(country_vector_path, target_work_database_path):
                         country_iso3_list[country_id])
             if intersecting_country_list:
                 grid_insert_args.append((
-                    lng_min, lat_max-1, lng_min+1, lat_max,
+                    grid_id, lng_min, lat_max-1, lng_min+1, lat_max,
                     ','.join(intersecting_country_list), 0))
+                grid_id += 1
 
     _execute_sqlite(
         """
         INSERT INTO
         work_status
-            (lng_min, lat_min, lng_max, lat_max, country_list, processed)
-        VALUES (?, ?, ?, ?, ?, ?)
+            (grid_id, lng_min, lat_min, lng_max, lat_max, country_list,
+             processed)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """, target_work_database_path,
         argument_list=grid_insert_args, mode='modify', execute='many')
 
@@ -353,6 +358,21 @@ def main():
         target_path_list=[country_borders_vector_path, WORK_DATABASE_PATH],
         dependent_task_list=[country_borders_dl_task],
         task_name='create status database')
+
+    work_grid_list = _execute_sqlite('''
+        SELECT grid_id, lng_min, lat_min, lng_max, lat_max
+        FROM work_status
+        WHERE country_list LIKE "%ZAF%" AND processed=0
+        ''', WORK_DATABASE_PATH, argument_list=[])
+
+    work_grid_list.append(
+        _execute_sqlite('''
+            SELECT grid_id, lng_min, lat_min, lng_max, lat_max
+            FROM work_status
+            WHERE country_list NOT LIKE "%ZAF%" AND processed=0
+            ''', WORK_DATABASE_PATH, argument_list=[]))
+
+    LOGGER.debug(work_grid_list)
 
     task_graph.join()
     task_graph.close()
