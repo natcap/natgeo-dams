@@ -175,7 +175,7 @@ def main(args=None):
             if filename_re:
                 file_path = os.path.join(annotations_dir, filename_re.group(1))
                 file_to_bounding_box_list[file_path].append(
-                    shapely.geometry.rectangle(
+                    shapely.geometry.box(
                         *[int(filename_re.group(i)) for i in range(2, 6)]))
     print(file_to_bounding_box_list)
 
@@ -213,7 +213,7 @@ def main(args=None):
                 break
             total_detections += 1
             print(box)
-            detected_box = shapely.geometry.rectangle(*box)
+            detected_box = shapely.geometry.box(*box)
             for box in bounding_box_list:
                 if box.intersects(detected_box):
                     print('got a hit')
