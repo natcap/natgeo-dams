@@ -303,7 +303,7 @@ def create_work_database(country_vector_path, target_work_database_path):
         """
         INSERT INTO
         work_status
-            (lng_min, lat_min, lng_mag, lat_max, country_list, processed)
+            (lng_min, lat_min, lng_max, lat_max, country_list, processed)
         VALUES (?, ?, ?, ?, ?, ?)
         """, target_work_database_path,
         argument_list=grid_insert_args, mode='modify', execute='many')
