@@ -222,7 +222,7 @@ def main(args=None):
 
             # this list makes a copy
             for test_box, test_score in list(box_score_tuple_list):
-                shapely_test_box = shapely.box(*test_box)
+                shapely_test_box = shapely.geometry.box(*test_box)
                 if shapely_test_box.intersects(shapely_box):
                     # we can remove this one too
                     box_score_tuple_list.remove((test_box, test_score))
