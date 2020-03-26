@@ -217,8 +217,8 @@ def main(args=None):
         cv2.imwrite(
             os.path.join(
                 args.save_path, '%s_annotated.png' % (
-                    os.path.basename(os.path.splitext(file_path)[0])),
-                raw_image))
+                    os.path.basename(os.path.splitext(file_path)[0]))),
+            raw_image)
         break
     # generator.compute_shapes = make_shapes_callback(model)
 
