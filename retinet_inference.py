@@ -236,6 +236,7 @@ def main(args=None):
                         box = test_box
             non_max_supression_box_list.append((box, score))
 
+        caption_count = 0
         for box, score in non_max_supression_box_list:
             total_detections += 1
             detected_box = shapely.geometry.box(*box)
@@ -245,12 +246,15 @@ def main(args=None):
                     break
             draw_box(raw_image, detected_box.bounds, (255, 102, 179), 1)
             draw_caption(raw_image, detected_box.bounds, str(score))
+            caption_count += 1
 
-        cv2.imwrite(
-            os.path.join(
-                args.save_path, '%s_annotated.png' % (
-                    os.path.basename(os.path.splitext(file_path)[0]))),
-            raw_image)
+        image_path = os.path.join(
+            args.save_path, '%s_annotated.png' % (
+                os.path.basename(os.path.splitext(file_path)[0])))
+        if caption_count > 1:
+            print('check out %s' % image_path)
+
+        cv2.imwrite(image_path, raw_image)
     print('total_detections: %d' % total_detections)
     print('found_dams: %d' % found_dams)
     # generator.compute_shapes = make_shapes_callback(model)
