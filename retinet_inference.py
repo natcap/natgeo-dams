@@ -3,6 +3,7 @@ Adapted from: https://github.com/fizyr/keras-retinanet
 """
 
 import argparse
+import collections
 import os
 import re
 import sys
@@ -160,11 +161,15 @@ def main(args=None):
     if args.save_path is not None and not os.path.exists(args.save_path):
         os.makedirs(args.save_path)
 
+    file_to_bounding_box_list = collections.defaultdict(list)
     with open(args.annotations, 'r') as annotations_file:
         for line in annotations_file:
-            filename_re = re.match('^([^,]+),', line)
+            filename_re = re.match(
+                '^([^,][^,]+,([^,]+),([^,]+),([^,]+),+),', line)
             if filename_re:
-                print(filename_re.group(1))
+                file_to_bounding_box_list[filename_re.group(1)].append(
+                    [float(filename_re.group(i)) for i in range(2, 7)])
+    print(file_to_bounding_box_list)
     sys.exit(0)
 
     # load the model
