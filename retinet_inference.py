@@ -194,7 +194,10 @@ def main(args=None):
     # iterate through each image
     found_dams = 0
     total_detections = 0
-    for file_path, bounding_box_list in file_to_bounding_box_list.items():
+    total_files = len(file_to_bounding_box_list)
+    for file_index, (file_path, bounding_box_list) in enumerate(
+            file_to_bounding_box_list.items()):
+        print('file %d of %d' % (file_index+1, total_files))
         raw_image = read_image_bgr(file_path)
         image = preprocess_image(raw_image.copy())
         scale = compute_resize_scale(
@@ -232,11 +235,9 @@ def main(args=None):
 
         for box, score in non_max_supression_box_list:
             total_detections += 1
-            print(box)
             detected_box = shapely.geometry.box(*box)
             for box in bounding_box_list:
                 if box.intersects(detected_box):
-                    print('got a hit')
                     found_dams += 1
                     break
             draw_box(raw_image, detected_box.bounds, (255, 102, 179), 1)
@@ -247,9 +248,8 @@ def main(args=None):
                 args.save_path, '%s_annotated.png' % (
                     os.path.basename(os.path.splitext(file_path)[0]))),
             raw_image)
-        break
-    print(total_detections)
-    print(found_dams)
+    print('total_detections: %d' % total_detections)
+    print('found_dams: %d' % found_dams)
     # generator.compute_shapes = make_shapes_callback(model)
 
     # # print model summary
