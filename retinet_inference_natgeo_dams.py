@@ -4,21 +4,45 @@ Adapted from: https://github.com/fizyr/keras-retinanet
 
 import argparse
 import collections
+import logging
+import multiprocessing
 import os
 import re
+import subprocess
+import sqlite3
 import sys
 
 from keras_retinanet import models
 from keras_retinanet.utils.gpu import setup_gpu
 from keras_retinanet.utils.keras_version import check_keras_version
 from keras_retinanet.utils.tf_version import check_tf_version
+from osgeo import gdal
 import cv2
 import keras
 import PIL
 import numpy
+import rtree
 import shapely.geometry
+import taskgraph
 
-DETECTED_DAM_IMAGERY_DIR = 'detected_dam_imagery'
+
+WORKSPACE_DIR = 'natgeo_inference_workspace'
+DETECTED_DAM_IMAGERY_DIR = os.path.join(WORKSPACE_DIR, 'detected_dam_imagery')
+ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
+CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
+COUNTRY_BORDER_VECTOR_URI = (
+    'gs://natgeo-dams-data/ecoshards/'
+    'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg')
+WORK_DATABASE_PATH = os.path.join(CHURN_DIR, 'natgeo_dams_database.db')
+
+logging.basicConfig(
+    filename='log.txt',
+    level=logging.DEBUG,
+    format=(
+        '%(asctime)s (%(relativeCreated)d) %(processName)s %(levelname)s '
+        '%(name)s [%(funcName)s:%(lineno)d] %(message)s'))
+LOGGER = logging.getLogger(__name__)
+logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 
 def compute_resize_scale(image_shape, min_side=800, max_side=1333):
@@ -123,15 +147,213 @@ def parse_args(args):
     return parser.parse_args(args)
 
 
+@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
+def _execute_sqlite(
+        sqlite_command, database_path, argument_list=None,
+        mode='read_only', execute='execute', fetch=None):
+    """Execute SQLite command and attempt retries on a failure.
+
+    Parameters:
+        sqlite_command (str): a well formatted SQLite command.
+        database_path (str): path to the SQLite database to operate on.
+        argument_list (list): `execute == 'execute` then this list is passed to
+            the internal sqlite3 `execute` call.
+        mode (str): must be either 'read_only' or 'modify'.
+        execute (str): must be either 'execute', 'many', or 'script'.
+        fetch (str): if not `None` can be either 'all' or 'one'.
+            If not None the result of a fetch will be returned by this
+            function.
+
+    Returns:
+        result of fetch if `fetch` is not None.
+
+    """
+    cursor = None
+    connection = None
+    try:
+        if mode == 'read_only':
+            ro_uri = r'%s?mode=ro' % pathlib.Path(
+                os.path.abspath(database_path)).as_uri()
+            LOGGER.debug(
+                '%s exists: %s', ro_uri, os.path.exists(os.path.abspath(
+                    database_path)))
+            connection = sqlite3.connect(ro_uri, uri=True)
+        elif mode == 'modify':
+            connection = sqlite3.connect(database_path)
+        else:
+            raise ValueError('Unknown mode: %s' % mode)
+
+        if execute == 'execute':
+            cursor = connection.execute(sqlite_command, argument_list)
+        elif execute == 'many':
+            cursor = connection.executemany(sqlite_command, argument_list)
+        elif execute == 'script':
+            cursor = connection.executescript(sqlite_command)
+        else:
+            raise ValueError('Unknown execute mode: %s' % execute)
+
+        result = None
+        payload = None
+        if fetch == 'all':
+            payload = (cursor.fetchall())
+        elif fetch == 'one':
+            payload = (cursor.fetchone())
+        elif fetch is not None:
+            raise ValueError('Unknown fetch mode: %s' % fetch)
+        if payload is not None:
+            result = list(payload)
+        cursor.close()
+        connection.commit()
+        connection.close()
+        return result
+    except Exception:
+        LOGGER.exception('Exception on _execute_sqlite: %s', sqlite_command)
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.commit()
+            connection.close()
+        raise
+
+
+def create_work_database(country_vector_path, target_work_database_path):
+    """Create a runtime status database if it doesn't exist.
+
+    Parameters:
+        country_vector_path (str): path to a country vector with 'iso3' field.
+        target_work_database_path (str): path to database to create.
+
+    Returns:
+        None.
+
+    """
+    LOGGER.debug('launching create_work_database')
+
+    # processed quads table
+    # annotations
+    create_database_sql = (
+        """
+        CREATE TABLE work_status (
+            lng_min REAL NOT NULL,
+            lat_min REAL NOT NULL,
+            lng_mag REAL NOT NULL,
+            lat_max REAL NOT NULL,
+            country_list TEXT NOT NULL,
+            processed INT NOT NULL);
+
+        CREATE INDEX lng_min_index ON work_status (lng_min);
+        CREATE INDEX lat_min_index ON work_status (lat_min);
+        CREATE INDEX lng_max_index ON work_status (lng_max);
+        CREATE INDEX lat_max_index ON work_status (lat_max);
+
+        CREATE TABLE detected_dams (
+            lng_min REAL NOT NULL,
+            lat_min REAL NOT NULL,
+            lng_mag REAL NOT NULL,
+            lat_max REAL NOT NULL,
+            probability REAL NOT NULL,
+            country_list TEXT NOT NULL);
+
+        CREATE INDEX lng_min_index ON detected_dams (lng_min);
+        CREATE INDEX lat_min_index ON detected_dams (lat_min);
+        CREATE INDEX lng_max_index ON detected_dams (lng_max);
+        CREATE INDEX lat_max_index ON detected_dams (lat_max);
+        """)
+    if os.path.exists(target_work_database_path):
+        os.remove(target_work_database_path)
+    connection = sqlite3.connect(target_work_database_path)
+    connection.executescript(create_database_sql)
+    connection.commit()
+    connection.close()
+
+    country_vector = gdal.OpenEx(country_vector_path, gdal.OF_VECTOR)
+    country_layer = country_vector.GetLayer()
+
+    country_index = rtree.index.Index()
+    country_geom_list = []
+    country_iso3_list = []
+    for country_feature in country_layer:
+        country_geom = country_feature.GetGeometryRef()
+        country_shapely = shapely.wkb.loads(country_geom.ExportToWkb())
+        country_geom = None
+        country_index.insert(len(country_geom_list), country_shapely.bounds)
+        country_geom_list.append(country_shapely)
+        country_iso3_list.append(country_feature.GetField('iso3'))
+
+    grid_insert_args = []
+    for lat_max in range(-60, 60):
+        LOGGER.debug(lat_max)
+        for lng_min in range(-180, 180):
+            grid_box = shapely.geometry.box(
+                lng_min, lat_max-1, lng_min+1, lat_max)
+            intersecting_country_list = []
+            for country_id in country_index.intersection(grid_box.bounds):
+                if country_geom_list[country_id].intersects(grid_box):
+                    intersecting_country_list.append(
+                        country_iso3_list[country_id])
+            if intersecting_country_list:
+                grid_insert_args.append((
+                    lng_min, lat_max-1, lng_min+1, lat_max,
+                    ','.join(intersecting_country_list), 0))
+
+    _execute_sqlite(
+        """
+        INSERT INTO
+        work_status
+            (lng_min, lat_min, lng_mag, lat_max, country_list, processed)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, target_work_database_path,
+        argument_list=grid_insert_args, mode='modify', execute='many')
+
+
+def copy_from_gs(gs_uri, target_path):
+    """Copy a GS objec to `target_path."""
+    dirpath = os.path.dirname(target_path)
+    try:
+        os.makedirs(dirpath)
+    except Exception:
+        pass
+    subprocess.run(
+        #'/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
+        'gsutil cp %s %s' %
+        (gs_uri, target_path), shell=True)
+
+
 def main():
     """Entry point."""
     # parse arguments
     args = parse_args(sys.argv[1:])
+    for dir_path in [
+            WORKSPACE_DIR, ECOSHARD_DIR, CHURN_DIR, DETECTED_DAM_IMAGERY_DIR]:
+        try:
+            os.makedirs(dir_path)
+        except OSError:
+            pass
 
-    try:
-        os.makedirs(DETECTED_DAM_IMAGERY_DIR)
-    except OSError:
-        pass
+    task_graph = taskgraph.TaskGraph(
+        WORKSPACE_DIR, -1, 5.0)
+
+    country_borders_vector_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(COUNTRY_BORDER_VECTOR_URI))
+    country_borders_dl_task = task_graph.add_task(
+        func=copy_from_gs,
+        args=(
+            COUNTRY_BORDER_VECTOR_URI,
+            country_borders_vector_path),
+        task_name='download country borders vector',
+        target_path_list=[country_borders_vector_path])
+
+    task_graph.add_task(
+        func=create_work_database,
+        args=(WORK_DATABASE_PATH,),
+        hash_target_files=False,
+        target_path_list=[country_borders_vector_path, WORK_DATABASE_PATH],
+        dependent_task_list=[country_borders_dl_task],
+        task_name='create status database')
+
+    task_graph.join()
+    task_graph.close()
+    return
 
     file_to_bounding_box_list = collections.defaultdict(list)
     annotations_dir = os.path.relpath(os.path.dirname(args.annotations))
@@ -233,58 +455,6 @@ def main():
         cv2.imwrite(image_path, raw_image)
     print('total_detections: %d' % total_detections)
     print('found_dams: %d' % found_dams)
-    # generator.compute_shapes = make_shapes_callback(model)
-
-    # # print model summary
-    # # print(model.summary())
-
-    # # start evaluation
-
-    # all_detections, all_inferences = _get_detections(
-    #     generator, model, score_threshold=args.score_threshold,
-    #     max_detections=args.max_detections, save_path=None)
-
-    # print(all_detections)
-    # print(all_inferences)
-
-
-    # average_precisions, inference_time = evaluate(
-    #     generator,
-    #     model,
-    #     iou_threshold=args.iou_threshold,
-    #     score_threshold=args.score_threshold,
-    #     max_detections=args.max_detections,
-    #     save_path=args.save_path
-    # )
-
-    # # print evaluation
-    # total_instances = []
-    # precisions = []
-    # for label, (average_precision, num_annotations) in \
-    #         average_precisions.items():
-    #     print(
-    #         '{:.0f} instances of class'.format(num_annotations),
-    #         generator.label_to_name(label),
-    #         'with average precision: {:.4f}'.format(average_precision))
-    #     total_instances.append(num_annotations)
-    #     precisions.append(average_precision)
-
-    # if sum(total_instances) == 0:
-    #     print('No test instances found.')
-    #     return
-
-    # print(
-    #     'Inference time for {:.0f} images: {:.4f}'.format(
-    #         generator.size(), inference_time))
-
-    # print(
-    #     'mAP using the weighted average of precisions among classes: '
-    #     '{:.4f}'.format(
-    #         sum([a * b for a, b in zip(total_instances, precisions)]) /
-    #         sum(total_instances)))
-    # print(
-    #     'mAP: {:.4f}'.format(
-    #         sum(precisions) / sum(x > 0 for x in total_instances)))
 
 
 if __name__ == '__main__':
