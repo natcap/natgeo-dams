@@ -209,8 +209,10 @@ def main(args=None):
         boxes /= scale
 
         non_max_supression_box_list = []
+        # convert box to a list from a numpy array and score to a value from
+        # a single element array
         box_score_tuple_set = set(
-            [(box, score[0]) for box, score in zip(boxes[0], scores)
+            [(list(box), score[0]) for box, score in zip(boxes[0], scores)
              if score[0] > 0])
         while box_score_tuple_set:
             box, score = next(iter(box_score_tuple_set))
