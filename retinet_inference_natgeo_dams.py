@@ -533,7 +533,7 @@ def process_quad(
 
                         lng_lat_score_list.append((
                             lng_lat_bounding_box + [
-                                score, country_intersection_list,
+                                score, ','.join(country_intersection_list),
                                 quad_png_path]))
 
                     # upload .pngs to bucket
