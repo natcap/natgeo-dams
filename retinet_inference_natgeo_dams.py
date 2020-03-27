@@ -18,9 +18,13 @@ from keras_retinanet.utils.gpu import setup_gpu
 from keras_retinanet.utils.keras_version import check_keras_version
 from keras_retinanet.utils.tf_version import check_tf_version
 from osgeo import gdal
+from osgeo import osr
 import cv2
+import ecoshard
 import keras
 import PIL
+import png
+import pygeoprocessing
 import numpy
 import requests
 import retrying
@@ -52,6 +56,8 @@ logging.getLogger('taskgraph').setLevel(logging.INFO)
 ISO_CODES_TO_SKIP = ['ATA']
 PLANET_API_KEY_FILE = 'planet_api_key.txt'
 MOSAIC_ID = '4ce5863a-fb3f-4cad-a899-b8c053af1858'
+REQUEST_TIMEOUT = 1.5
+TRAINING_IMAGE_DIMS = (419, 419)
 
 
 def compute_resize_scale(image_shape, min_side=800, max_side=1333):
@@ -356,9 +362,247 @@ def get_quad_ids(session, mosaic_id, min_x, min_y, max_x, max_y):
     return quad_id_list
 
 
+@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
+def fetch_quad(
+        planet_api_key, mosaic_id, quad_id, target_quad_path,
+        quad_database_path):
+    try:
+        session = requests.Session()
+        session.auth = (planet_api_key, '')
+        LOGGER.debug('fetch get quad')
+        get_quad_url = (
+            f'https://api.planet.com/basemaps/v1/mosaics/'
+            f'{mosaic_id}/quads/{quad_id}')
+        quads_json = session.get(get_quad_url, timeout=REQUEST_TIMEOUT)
+        download_url = (quads_json.json())['_links']['download']
+        ecoshard.download_url(download_url, target_quad_path)
+        quad_uri = (
+            'gs://natgeo-dams-data/known-dam-quads/%s' %
+            os.path.basename(target_quad_path))
+        subprocess.run(
+            './google-cloud-sdk/bin/gsutil cp %s %s' % (
+                target_quad_path, quad_uri),
+            shell=True, check=True)
+        os.remove(target_quad_path)
+        insert_quad_url_into = (
+            "INSERT INTO "
+            "quad_id_to_uri (quad_id, quad_uri) "
+            "VALUES (?, ?);")
+        _execute_sqlite(
+            insert_quad_url_into, quad_database_path,
+            mode='modify', execute='execute',
+            argument_list=[quad_id, quad_uri])
+        return True
+    except Exception:
+        LOGGER.exception('error on quad %s' % quad_id)
+        raise
+
+
+def make_quad_png(
+        quad_raster_path, quad_png_path, xoff, yoff, win_xsize, win_ysize):
+    """Make a PNG out of a geotiff.
+
+    Parameters:
+        quad_raster_path (str): path to target download location.
+        quad_png_path (str): path to target png file.
+        xoff (int): x offset to read quad array
+        yoff (int): y offset to read quad array
+        win_xsize (int): size of x window
+        win_ysize (int): size of y window
+
+    Returns:
+        None.
+
+    """
+    raster = gdal.OpenEx(quad_raster_path, gdal.OF_RASTER)
+    rgba_array = numpy.array([
+        raster.GetRasterBand(i).ReadAsArray(
+            xoff=xoff, yoff=yoff, win_xsize=win_xsize, win_ysize=win_ysize)
+        for i in [1, 2, 3, 4]])
+    try:
+        row_count, col_count = rgba_array.shape[1::]
+        image_2d = numpy.transpose(
+            rgba_array, axes=[0, 2, 1]).reshape(
+            (-1,), order='F').reshape((-1, col_count*4))
+        png.from_array(image_2d, 'RGBA').save(quad_png_path)
+        return quad_png_path
+    except Exception:
+        LOGGER.exception(
+            'error on %s generate png with array:\n%s\ndims:%s\n'
+            'file exists:%s\nxoff=%d, yoff=%d, win_xsize=%d, win_ysize=%d' % (
+                quad_raster_path, rgba_array, rgba_array.shape,
+                os.path.exists(quad_raster_path),
+                xoff, yoff, win_xsize, win_ysize))
+        raise
+
+
+def process_quad(quad_raster_path, quad_id, work_database_path):
+    """Process quad into bounding box annotated chunks.
+
+    Parameters:
+        quad_uri (str): gs:// path to quad to download.
+        quad_id (str): ID in the database so work can be updated.
+        dams_database_path (str): path to the database that can be
+            updated to include the processing state complete and the
+            quad processed.
+
+    Returns:
+        True when complete.
+
+    """
+    quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
+    n_cols, n_rows = quad_info['raster_size']
+    geotransform = quad_info['geotransform']
+
+    # extract the bounding boxes
+    bb_srs = osr.SpatialReference()
+    bb_srs.ImportFromEPSG(4326)
+    quad_slice_index = 0
+    for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
+        win_xsize = TRAINING_IMAGE_DIMS[0]
+        if xoff + win_xsize >= n_cols:
+            xoff = n_cols-win_xsize-1
+        for yoff in range(0, n_rows, TRAINING_IMAGE_DIMS[1]):
+            win_ysize = TRAINING_IMAGE_DIMS[1]
+            if yoff + win_ysize >= n_rows:
+                yoff = n_rows-win_ysize-1
+                try:
+                    quad_png_path = os.path.join(
+                        CHURN_DIR, '%s_%d.png' % (quad_id, quad_slice_index))
+                    quad_slice_index += 1
+                    make_quad_png(
+                        quad_raster_path, quad_png_path,
+                        xoff, yoff, win_xsize, win_ysize)
+
+                    payload = detect_dams(model, quad_png_path)
+                    if payload is None:
+                        # no dams detected
+                        os.remove(quad_png_path)
+                        continue
+                    boxes, scores = payload
+
+                    # transform local bbs so they're relative to the png
+                    lng_lat_score_list = []
+                    for bounding_box, score in zip(boxes, scores):
+                        global_bounding_box = [
+                            bounding_box[0]+xoff,
+                            bounding_box[1]+yoff,
+                            bounding_box[2]+xoff,
+                            bounding_box[3]+yoff]
+
+                        # convert to lat/lng
+                        lng_a, lat_a = [int(x) for x in gdal.ApplyGeoTransform(
+                            geotransform, global_bounding_box[0],
+                            global_bounding_box[1])]
+                        lng_b, lat_b = [int(x) for x in gdal.ApplyGeoTransform(
+                            geotransform, global_bounding_box[2],
+                            global_bounding_box[3])]
+                        lng_min, lng_max = sorted([lng_a, lng_b])
+                        lat_min, lat_max = sorted([lat_a, lat_b])
+                        lng_lat_bounding_box = [
+                            lng_min, lat_min, lng_max, lat_max]
+
+                        # TODO: get country intersection list
+                        country_intersection_list = \
+                            get_country_intersection_list(
+                                lng_lat_bounding_box)
+
+                        lng_lat_score_list.append((
+                            lng_lat_bounding_box + [
+                                score, country_intersection_list]))
+
+                    # upload .pngs to bucket
+                    try:
+                        quad_uri = (
+                            'gs://natgeo-dams-data/detected_dam_data/'
+                            'annotated_imagery/%s' % os.path.basename(
+                                quad_png_path))
+                        subprocess.run(
+                            'gsutil mv %s %s'
+                            % (quad_png_path, quad_uri), shell=True,
+                            check=True)
+                    except subprocess.CalledProcessError:
+                        LOGGER.warning(
+                            'file might already exist -- not uploading')
+                        if os.path.exists(quad_png_path):
+                            os.remove(quad_png_path)
+
+                    _execute_sqlite(
+                        """
+                        INSERT INTO
+                        detected_dams
+                            (lng_min, lat_min, lng_max, lat_max, probability,
+                             country_list)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """, work_database_path,
+                        argument_list=lng_lat_score_list, mode='modify',
+                        execute='many')
+
+                except Exception:
+                    LOGGER.exception(
+                        'something bad happened, skipping %s' % quad_png_path)
+
+def detect_dams(model, image_path):
+    """Detect dams in the image and annotate if found.
+
+    Parameters:
+        model (keras): model that can do bounding box detection.
+        image_path (str): path to png to do image detection on.
+
+    Returns:
+        List of (box, score) tuples for every bounding box found.
+
+    """
+    raw_image = read_image_bgr(image_path)
+    image = preprocess_image(raw_image.copy())
+    scale = compute_resize_scale(image.shape, min_side=800, max_side=1333)
+    image = cv2.resize(image, None, fx=scale, fy=scale)
+    if keras.backend.image_data_format() == 'channels_first':
+        image = image.transpose((2, 0, 1))
+    boxes, scores, labels = model.predict_on_batch(
+        numpy.expand_dims(image, axis=0))[:3]
+    # correct boxes for image scale
+    boxes /= scale
+
+    non_max_supression_box_list = []
+    # convert box to a list from a numpy array and score to a value from
+    # a single element array
+    box_score_tuple_list = [
+        (list(box), score) for box, score in zip(boxes[0], scores[0])
+        if score > 0.3]
+    while box_score_tuple_list:
+        box, score = box_score_tuple_list.pop()
+        shapely_box = shapely.geometry.box(*box)
+        keep = True
+        # this list makes a copy
+        for test_box, test_score in list(box_score_tuple_list):
+            shapely_test_box = shapely.geometry.box(*test_box)
+            if shapely_test_box.intersects(shapely_box):
+                if test_score > score:
+                    # keep the new one
+                    keep = False
+                    break
+        if keep:
+            non_max_supression_box_list.append((box, score))
+
+    # no dams detected, just skip
+    if not non_max_supression_box_list:
+        print('nothing found')
+        print(scores)
+        return None
+
+    for box, score in non_max_supression_box_list:
+        detected_box = shapely.geometry.box(*box)
+        color = (255, 102, 179)
+        draw_box(raw_image, detected_box.bounds, color, 1)
+        draw_caption(raw_image, detected_box.bounds, str(score))
+
+    cv2.imwrite(image_path, raw_image)
+    return non_max_supression_box_list
+
+
 def main():
     """Entry point."""
-    # parse arguments
     args = parse_args(sys.argv[1:])
     for dir_path in [
             WORKSPACE_DIR, ECOSHARD_DIR, CHURN_DIR, DETECTED_DAM_IMAGERY_DIR]:
@@ -419,6 +663,26 @@ def main():
                 WHERE quad_id=?;
                 ''', QUAD_CACHE_DB_PATH, argument_list=[quad_id], fetch='one')
             LOGGER.debug('%s: %s', quad_id, gs_uri)
+            target_quad_path = os.path.join(
+                CHURN_DIR, os.path.basename(gs_uri))
+            if gs_uri is None:
+                fetch_quad(
+                    planet_api_key, MOSAIC_ID, quad_id, target_quad_path,
+                    QUAD_CACHE_DB_PATH)
+            else:
+                copy_from_gs(gs_uri, target_quad_path)
+            # cut quad into 419 x 419 blocks
+            process_quad(target_quad_path)
+            os.remove(target_quad_path)
+
+        # update grid as processed
+        _execute_sqlite(
+            """
+            UPDATE work_status
+            SET processed=1
+            WHERE grid_id=?;
+            """, WORK_DATABASE_PATH,
+            argument_list=[grid_id], mode='modify', execute='execute')
 
     task_graph.join()
     task_graph.close()
@@ -459,71 +723,7 @@ def main():
     for file_index, (file_path, bounding_box_list) in enumerate(
             file_to_bounding_box_list.items()):
         print('file %d of %d' % (file_index+1, total_files))
-        raw_image = read_image_bgr(file_path)
-        image = preprocess_image(raw_image.copy())
-        scale = compute_resize_scale(
-            image.shape, min_side=args.image_min_side,
-            max_side=args.image_max_side)
-        image = cv2.resize(image, None, fx=scale, fy=scale)
-        if keras.backend.image_data_format() == 'channels_first':
-            image = image.transpose((2, 0, 1))
-        boxes, scores, labels = model.predict_on_batch(
-            numpy.expand_dims(image, axis=0))[:3]
-        # correct boxes for image scale
-        boxes /= scale
-
-        non_max_supression_box_list = []
-        # convert box to a list from a numpy array and score to a value from
-        # a single element array
-        box_score_tuple_list = [
-            (list(box), score) for box, score in zip(boxes[0], scores[0])
-            if score > 0.3]
-        while box_score_tuple_list:
-            box, score = box_score_tuple_list.pop()
-            shapely_box = shapely.geometry.box(*box)
-            keep = True
-            # this list makes a copy
-            for test_box, test_score in list(box_score_tuple_list):
-                shapely_test_box = shapely.geometry.box(*test_box)
-                if shapely_test_box.intersects(shapely_box):
-                    if test_score > score:
-                        # keep the new one
-                        keep = False
-                        break
-            if keep:
-                non_max_supression_box_list.append((box, score))
-
-        # no dams detected, just skip
-        if not non_max_supression_box_list:
-            print('nothing found')
-            print(scores)
-            continue
-
-        caption_count = 0
-        for box in bounding_box_list:
-            draw_box(raw_image, box.bounds, (0, 0, 255), 1)
-        for box, score in non_max_supression_box_list:
-            total_detections += 1
-            detected_box = shapely.geometry.box(*box)
-            color = (255, 102, 179)
-            for box in bounding_box_list:
-                if box.intersects(detected_box):
-                    found_dams += 1
-                    color = (0, 200, 0)
-                    break
-            draw_box(raw_image, detected_box.bounds, color, 1)
-            draw_caption(raw_image, detected_box.bounds, str(score))
-            caption_count += 1
-
-        image_path = os.path.join(
-            args.save_path, '%s_annotated.png' % (
-                os.path.basename(os.path.splitext(file_path)[0])))
-        if caption_count > 1:
-            print('check out %s' % image_path)
-
-        cv2.imwrite(image_path, raw_image)
-    print('total_detections: %d' % total_detections)
-    print('found_dams: %d' % found_dams)
+        # TODO: i moved this to a funciton
 
 
 if __name__ == '__main__':
