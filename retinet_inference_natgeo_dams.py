@@ -410,6 +410,7 @@ def main():
         quad_id_list = get_quad_ids(
             session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
         for quad_id in quad_id_list:
+            LOGGER.debug('attempting to read gs_uri')
             gs_uri = _execute_sqlite(
                 '''
                 SELECT gs_uri
