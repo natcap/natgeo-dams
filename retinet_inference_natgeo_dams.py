@@ -325,7 +325,7 @@ def create_work_database(target_work_database_path, country_vector_path):
                 lng_min, lat_max-1, lng_min+1, lat_max)
             intersecting_country_list = \
                 get_country_intersection_list(
-                    country_vector_path, grid_box)
+                    grid_box, country_vector_path)
             if ISO_CODES_TO_SKIP in intersecting_country_list:
                 continue
             if intersecting_country_list:
@@ -527,7 +527,8 @@ def process_quad(
                         # TODO: get country intersection list
                         country_intersection_list = \
                             get_country_intersection_list(
-                                lng_lat_bounding_box)
+                                lng_lat_bounding_box,
+                                country_borders_vector_path)
 
                         lng_lat_score_list.append((
                             lng_lat_bounding_box + [
@@ -659,7 +660,7 @@ def main():
 
     task_graph.add_task(
         func=create_work_database,
-        args=(country_borders_vector_path, WORK_DATABASE_PATH,),
+        args=(WORK_DATABASE_PATH, country_borders_vector_path),
         hash_target_files=False,
         target_path_list=[country_borders_vector_path, WORK_DATABASE_PATH],
         dependent_task_list=[country_borders_dl_task],
@@ -708,6 +709,7 @@ def main():
             process_quad(
                 model, target_quad_path, quad_id, country_borders_vector_path,
                 WORK_DATABASE_PATH)
+
             os.remove(target_quad_path)
 
         # update grid as processed
