@@ -524,9 +524,11 @@ def process_quad(
                             lng_min, lat_min, lng_max, lat_max]
 
                         # get country intersection list
+                        shapely_box = shapely.geometry.box(
+                            *lng_lat_bounding_box)
                         country_intersection_list = \
                             get_country_intersection_list(
-                                lng_lat_bounding_box,
+                                shapely_box,
                                 country_borders_vector_path)
 
                         lng_lat_score_list.append((
