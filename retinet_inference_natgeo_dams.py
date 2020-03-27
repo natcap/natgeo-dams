@@ -37,6 +37,7 @@ CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
 COUNTRY_BORDER_VECTOR_URI = (
     'gs://natgeo-dams-data/ecoshards/'
     'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg')
+QUAD_CACHE_DB_PATH = 'planet_quad_cache_workspace/quad_uri.db'
 WORK_DATABASE_PATH = os.path.join(CHURN_DIR, 'natgeo_dams_database.db')
 logging.basicConfig(
     filename='log.txt',
@@ -408,7 +409,14 @@ def main():
     for (grid_id, lng_min, lat_min, lng_max, lat_max) in work_grid_list:
         quad_id_list = get_quad_ids(
             session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
-        LOGGER.debug(quad_id_list)
+        for quad_id in quad_id_list:
+            gs_uri = _execute_sqlite(
+                '''
+                SELECT gs_uri
+                FROM quad_cache_table
+                WHERE quad_id=?
+                ''', argument_list=[grid_id], fetch='one')
+            LOGGER.debug('%s: %s', quad_id, gs_uri)
 
     task_graph.join()
     task_graph.close()
