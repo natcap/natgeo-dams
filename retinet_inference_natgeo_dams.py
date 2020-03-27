@@ -635,8 +635,7 @@ def main():
     if args.gpu:
         setup_gpu(args.gpu)
 
-    print('Loading model, this may take a second...')
-    model = models.load_model(args.model, backbone_name=args.backbone)
+    model = models.load_model(args.model, backbone_name='resnet50')
 
     for dir_path in [
             WORKSPACE_DIR, ECOSHARD_DIR, CHURN_DIR, DETECTED_DAM_IMAGERY_DIR]:
