@@ -477,8 +477,9 @@ def process_quad(
     geotransform = quad_info['geotransform']
 
     # extract the bounding boxes
-    bb_srs = osr.SpatialReference()
-    bb_srs.ImportFromEPSG(4326)
+    wgs84_srs = osr.SpatialReference()
+    wgs84_srs.ImportFromEPSG(4326)
+    wgs84_wkt = wgs84_srs.ExportToWkt()
     quad_slice_index = 0
     for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
         win_xsize = TRAINING_IMAGE_DIMS[0]
@@ -512,20 +513,26 @@ def process_quad(
                             bounding_box[3]+yoff]
 
                         # convert to lat/lng
-                        lng_a, lat_a = [int(x) for x in gdal.ApplyGeoTransform(
+                        x_a, y_a = [int(x) for x in gdal.ApplyGeoTransform(
                             geotransform, global_bounding_box[0],
                             global_bounding_box[1])]
-                        lng_b, lat_b = [int(x) for x in gdal.ApplyGeoTransform(
+                        x_b, y_b = [int(x) for x in gdal.ApplyGeoTransform(
                             geotransform, global_bounding_box[2],
                             global_bounding_box[3])]
-                        lng_min, lng_max = sorted([lng_a, lng_b])
-                        lat_min, lat_max = sorted([lat_a, lat_b])
-                        lng_lat_bounding_box = [
-                            lng_min, lat_min, lng_max, lat_max]
+                        x_min, x_max = sorted([x_a, x_b])
+                        y_min, y_max = sorted([y_a, y_b])
+                        x_y_bounding_box = [
+                            x_min, y_min, x_max, y_max]
+
+                        lng_lat_bounding_box = \
+                            pygeoprocessing.transform_bounding_box(
+                                x_y_bounding_box, quad_info['projection'],
+                                wgs84_wkt)
 
                         # get country intersection list
                         shapely_box = shapely.geometry.box(
                             *lng_lat_bounding_box)
+
                         country_intersection_list = \
                             get_country_intersection_list(
                                 shapely_box,
@@ -533,7 +540,8 @@ def process_quad(
 
                         lng_lat_score_list.append((
                             lng_lat_bounding_box + [
-                                score, ','.join(country_intersection_list),
+                                float(score),
+                                ','.join(country_intersection_list),
                                 quad_png_path]))
 
                     # upload .pngs to bucket
