@@ -552,6 +552,7 @@ def process_quad(
                         if os.path.exists(quad_png_path):
                             os.remove(quad_png_path)
 
+                    LOGGER.debug('******* inserting the following into the table: %s', str(lng_lat_score_list))
                     _execute_sqlite(
                         """
                         INSERT INTO
