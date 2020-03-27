@@ -415,9 +415,8 @@ def main():
                 '''
                 SELECT gs_uri
                 FROM quad_cache_table
-                WHERE quad_id='?'
-                ''',
-                QUAD_CACHE_DB_PATH, argument_list=[grid_id], fetch='one')
+                WHERE quad_id=?;
+                ''', QUAD_CACHE_DB_PATH, argument_list=[grid_id], fetch='one')
             LOGGER.debug('%s: %s', quad_id, gs_uri)
 
     task_graph.join()
