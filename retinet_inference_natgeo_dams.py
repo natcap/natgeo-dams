@@ -406,9 +406,9 @@ def main():
     session = requests.Session()
     session.auth = (planet_api_key, '')
     for (grid_id, lng_min, lat_min, lng_max, lat_max) in work_grid_list:
-        get_quad_ids(session, MOSAIC_ID, min_x, min_y, max_x, max_y)
-
-    LOGGER.debug(work_grid_list)
+        quad_id_list = get_quad_ids(
+            session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
+        LOGGER.debug(quad_id_list)
 
     task_graph.join()
     task_graph.close()
