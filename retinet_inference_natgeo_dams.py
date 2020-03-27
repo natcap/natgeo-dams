@@ -697,14 +697,13 @@ def main():
                 WHERE quad_id=?;
                 ''', QUAD_CACHE_DB_PATH, argument_list=[quad_id], fetch='one')
             LOGGER.debug('%s: %s', quad_id, gs_uri)
-            target_quad_path = os.path.join(
-                CHURN_DIR, os.path.basename(gs_uri))
+            target_quad_path = os.path.join(CHURN_DIR, '%s.tif' % quad_id)
             if gs_uri is None:
                 fetch_quad(
                     planet_api_key, MOSAIC_ID, quad_id, target_quad_path,
                     QUAD_CACHE_DB_PATH)
             else:
-                copy_from_gs(gs_uri, target_quad_path)
+                copy_from_gs(gs_uri[0], target_quad_path)
             # cut quad into 419 x 419 blocks
             process_quad(
                 model, target_quad_path, quad_id, country_borders_vector_path,
