@@ -3,12 +3,9 @@ Adapted from: https://github.com/fizyr/keras-retinanet
 """
 
 import argparse
-import collections
 import logging
-import multiprocessing
 import os
 import pathlib
-import re
 import subprocess
 import sqlite3
 import sys
@@ -91,7 +88,6 @@ def read_image_bgr(path):
     Args
         path: Path to the image.
     """
-    # We deliberately don't use cv2.imread here, since it gives no feedback on errors while reading the image.
     image = numpy.asarray(PIL.Image.open(path).convert('RGB'))
     return image[:, :, ::-1].copy()
 
@@ -107,18 +103,13 @@ def preprocess_image(x, mode='caffe'):
     Returns
         The input with the ImageNet mean subtracted.
     """
-    # mostly identical to "https://github.com/keras-team/keras-applications/blob/master/keras_applications/imagenet_utils.py"
-    # except for converting RGB -> BGR since we assume BGR already
-
     # covert always to float32 to keep compatibility with opencv
     x = x.astype(numpy.float32)
-
     if mode == 'tf':
         x /= 127.5
         x -= 1.
     elif mode == 'caffe':
         x -= [103.939, 116.779, 123.68]
-
     return x
 
 
@@ -231,11 +222,50 @@ def _execute_sqlite(
         raise
 
 
-def create_work_database(country_vector_path, target_work_database_path):
+def get_country_intersection_list(grid_box, country_vector_path):
+    """Query index and return string list of intersecting countries.
+
+    Parameters:
+        grid_box (list): list of lng_min, lat_min, lng_max, lat_max
+        country_vector_path (str): path to country index vector with 'iso3'
+            fields.
+
+    Returns:
+        list of string country ISO3 codes.
+
+    """
+    if not hasattr(get_country_intersection_list, 'country_index'):
+        # TODO: make country index
+        country_vector = gdal.OpenEx(country_vector_path, gdal.OF_VECTOR)
+        country_layer = country_vector.GetLayer()
+
+        country_index = rtree.index.Index()
+        country_index.country_geom_list = []
+        country_index.country_iso3_list = []
+        for country_feature in country_layer:
+            country_geom = country_feature.GetGeometryRef()
+            country_shapely = shapely.wkb.loads(country_geom.ExportToWkb())
+            country_geom = None
+            country_index.insert(
+                len(country_index.country_geom_list), country_shapely.bounds)
+            country_index.country_geom_list.append(country_shapely)
+            country_index.country_iso3_list.append(
+                country_feature.GetField('iso3'))
+        get_country_intersection_list.country_index = country_index
+
+    country_index = get_country_intersection_list.country_index
+    intersecting_country_list = []
+    for country_id in country_index.intersection(grid_box.bounds):
+        if country_index.country_geom_list[country_id].intersects(grid_box):
+            intersecting_country_list.append(
+                country_index.country_iso3_list[country_id])
+    return intersecting_country_list
+
+
+def create_work_database(target_work_database_path, country_vector_path):
     """Create a runtime status database if it doesn't exist.
 
     Parameters:
-        country_vector_path (str): path to a country vector with 'iso3' field.
         target_work_database_path (str): path to database to create.
 
     Returns:
@@ -269,12 +299,15 @@ def create_work_database(country_vector_path, target_work_database_path):
             lng_max REAL NOT NULL,
             lat_max REAL NOT NULL,
             probability REAL NOT NULL,
-            country_list TEXT NOT NULL);
+            country_list TEXT NOT NULL,
+            image_uri TEXT NOT NULL);
 
         CREATE INDEX lng_min_detected_dams_index ON detected_dams (lng_min);
         CREATE INDEX lat_min_detected_dams_index ON detected_dams (lat_min);
         CREATE INDEX lng_max_detected_dams_index ON detected_dams (lng_max);
         CREATE INDEX lat_max_detected_dams_index ON detected_dams (lat_max);
+        CREATE INDEX image_uri_detected_dams_index
+            ON detected_dams (image_uri);
         """)
     if os.path.exists(target_work_database_path):
         os.remove(target_work_database_path)
@@ -283,20 +316,6 @@ def create_work_database(country_vector_path, target_work_database_path):
     connection.commit()
     connection.close()
 
-    country_vector = gdal.OpenEx(country_vector_path, gdal.OF_VECTOR)
-    country_layer = country_vector.GetLayer()
-
-    country_index = rtree.index.Index()
-    country_geom_list = []
-    country_iso3_list = []
-    for country_feature in country_layer:
-        country_geom = country_feature.GetGeometryRef()
-        country_shapely = shapely.wkb.loads(country_geom.ExportToWkb())
-        country_geom = None
-        country_index.insert(len(country_geom_list), country_shapely.bounds)
-        country_geom_list.append(country_shapely)
-        country_iso3_list.append(country_feature.GetField('iso3'))
-
     grid_insert_args = []
     grid_id = 0
     for lat_max in range(-60, 60):
@@ -304,11 +323,9 @@ def create_work_database(country_vector_path, target_work_database_path):
         for lng_min in range(-180, 180):
             grid_box = shapely.geometry.box(
                 lng_min, lat_max-1, lng_min+1, lat_max)
-            intersecting_country_list = []
-            for country_id in country_index.intersection(grid_box.bounds):
-                if country_geom_list[country_id].intersects(grid_box):
-                    intersecting_country_list.append(
-                        country_iso3_list[country_id])
+            intersecting_country_list = \
+                get_country_intersection_list(
+                    country_vector_path, grid_box)
             if ISO_CODES_TO_SKIP in intersecting_country_list:
                 continue
             if intersecting_country_list:
@@ -436,13 +453,18 @@ def make_quad_png(
         raise
 
 
-def process_quad(quad_raster_path, quad_id, work_database_path):
+def process_quad(
+        model, quad_raster_path, quad_id, country_borders_vector_path,
+        work_database_path):
     """Process quad into bounding box annotated chunks.
 
     Parameters:
+        model (keras): tensorflow model for bb detection
         quad_uri (str): gs:// path to quad to download.
         quad_id (str): ID in the database so work can be updated.
-        dams_database_path (str): path to the database that can be
+        country_borders_vector_path (str): path to a country vector used for
+            determining bb intersections with countries.
+        work_database_path (str): path to the database that can be
             updated to include the processing state complete and the
             quad processed.
 
@@ -509,7 +531,8 @@ def process_quad(quad_raster_path, quad_id, work_database_path):
 
                         lng_lat_score_list.append((
                             lng_lat_bounding_box + [
-                                score, country_intersection_list]))
+                                score, country_intersection_list,
+                                quad_png_path]))
 
                     # upload .pngs to bucket
                     try:
@@ -532,8 +555,8 @@ def process_quad(quad_raster_path, quad_id, work_database_path):
                         INSERT INTO
                         detected_dams
                             (lng_min, lat_min, lng_max, lat_max, probability,
-                             country_list)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                             country_list, image_uri)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """, work_database_path,
                         argument_list=lng_lat_score_list, mode='modify',
                         execute='many')
@@ -541,6 +564,7 @@ def process_quad(quad_raster_path, quad_id, work_database_path):
                 except Exception:
                     LOGGER.exception(
                         'something bad happened, skipping %s' % quad_png_path)
+
 
 def detect_dams(model, image_path):
     """Detect dams in the image and annotate if found.
@@ -604,6 +628,16 @@ def detect_dams(model, image_path):
 def main():
     """Entry point."""
     args = parse_args(sys.argv[1:])
+    check_keras_version()
+    check_tf_version()
+
+    # optionally choose specific GPU
+    if args.gpu:
+        setup_gpu(args.gpu)
+
+    print('Loading model, this may take a second...')
+    model = models.load_model(args.model, backbone_name=args.backbone)
+
     for dir_path in [
             WORKSPACE_DIR, ECOSHARD_DIR, CHURN_DIR, DETECTED_DAM_IMAGERY_DIR]:
         try:
@@ -655,7 +689,7 @@ def main():
         quad_id_list = get_quad_ids(
             session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
         for quad_id in quad_id_list:
-            LOGGER.debug('attempting to read gs_uri at %s', grid_id)
+            LOGGER.debug('attempting to process grid %s', grid_id)
             gs_uri = _execute_sqlite(
                 '''
                 SELECT gs_uri
@@ -672,7 +706,9 @@ def main():
             else:
                 copy_from_gs(gs_uri, target_quad_path)
             # cut quad into 419 x 419 blocks
-            process_quad(target_quad_path)
+            process_quad(
+                model, target_quad_path, quad_id, country_borders_vector_path,
+                WORK_DATABASE_PATH)
             os.remove(target_quad_path)
 
         # update grid as processed
@@ -687,43 +723,6 @@ def main():
     task_graph.join()
     task_graph.close()
     return
-
-    file_to_bounding_box_list = collections.defaultdict(list)
-    annotations_dir = os.path.relpath(os.path.dirname(args.annotations))
-    with open(args.annotations, 'r') as annotations_file:
-        for line in annotations_file:
-            print(line)
-            # filename_re = re.match(
-            #     r'^([^,]+),(\d+),(\d+),(\d+),(\d+),', line)
-            filename_re = re.match(r'^([^,]+),,,,,', line)
-            if filename_re:
-                file_path = os.path.join(annotations_dir, filename_re.group(1))
-                file_to_bounding_box_list[file_path] = []
-                print(file_path)
-                # file_to_bounding_box_list[file_path].append(
-                #     shapely.geometry.box(
-                #         *[int(filename_re.group(i)) for i in range(2, 6)]))
-
-    # load the model
-    # make sure keras and tensorflow are the minimum required version
-    check_keras_version()
-    check_tf_version()
-
-    # optionally choose specific GPU
-    if args.gpu:
-        setup_gpu(args.gpu)
-
-    print('Loading model, this may take a second...')
-    model = models.load_model(args.model, backbone_name=args.backbone)
-
-    # iterate through each image
-    found_dams = 0
-    total_detections = 0
-    total_files = len(file_to_bounding_box_list)
-    for file_index, (file_path, bounding_box_list) in enumerate(
-            file_to_bounding_box_list.items()):
-        print('file %d of %d' % (file_index+1, total_files))
-        # TODO: i moved this to a funciton
 
 
 if __name__ == '__main__':
