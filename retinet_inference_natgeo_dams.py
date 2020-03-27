@@ -37,7 +37,8 @@ CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
 COUNTRY_BORDER_VECTOR_URI = (
     'gs://natgeo-dams-data/ecoshards/'
     'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg')
-QUAD_CACHE_DB_PATH = 'planet_quad_cache_workspace/quad_uri.db'
+QUAD_CACHE_DB_PATH = os.path.join(
+    'planet_quad_cache_workspace', 'quad_uri.db')
 WORK_DATABASE_PATH = os.path.join(CHURN_DIR, 'natgeo_dams_database.db')
 logging.basicConfig(
     filename='log.txt',
