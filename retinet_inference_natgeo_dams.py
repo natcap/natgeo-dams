@@ -410,13 +410,14 @@ def main():
         quad_id_list = get_quad_ids(
             session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
         for quad_id in quad_id_list:
-            LOGGER.debug('attempting to read gs_uri')
+            LOGGER.debug('attempting to read gs_uri at %s', grid_id)
             gs_uri = _execute_sqlite(
                 '''
                 SELECT gs_uri
                 FROM quad_cache_table
                 WHERE quad_id=?
-                ''', argument_list=[grid_id], fetch='one')
+                ''',
+                QUAD_CACHE_DB_PATH, argument_list=[grid_id], fetch='one')
             LOGGER.debug('%s: %s', quad_id, gs_uri)
 
     task_graph.join()
