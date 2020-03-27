@@ -496,16 +496,15 @@ def process_quad(
                         quad_raster_path, quad_png_path,
                         xoff, yoff, win_xsize, win_ysize)
 
-                    payload = detect_dams(model, quad_png_path)
-                    if payload is None:
+                    box_score_list = detect_dams(model, quad_png_path)
+                    if box_score_list is None:
                         # no dams detected
                         os.remove(quad_png_path)
                         continue
-                    boxes, scores = payload
 
                     # transform local bbs so they're relative to the png
                     lng_lat_score_list = []
-                    for bounding_box, score in zip(boxes, scores):
+                    for bounding_box, score in box_score_list:
                         global_bounding_box = [
                             bounding_box[0]+xoff,
                             bounding_box[1]+yoff,
@@ -524,7 +523,7 @@ def process_quad(
                         lng_lat_bounding_box = [
                             lng_min, lat_min, lng_max, lat_max]
 
-                        # TODO: get country intersection list
+                        # get country intersection list
                         country_intersection_list = \
                             get_country_intersection_list(
                                 lng_lat_bounding_box,
@@ -612,10 +611,9 @@ def detect_dams(model, image_path):
 
     # no dams detected, just skip
     if not non_max_supression_box_list:
-        print('nothing found')
-        print(scores)
+        LOGGER.debug('nothing found')
         return None
-
+    LOGGER.debug('found %d dams', len(non_max_supression_box_list))
     for box, score in non_max_supression_box_list:
         detected_box = shapely.geometry.box(*box)
         color = (255, 102, 179)
