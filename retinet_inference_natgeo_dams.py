@@ -22,6 +22,7 @@ import cv2
 import keras
 import PIL
 import numpy
+import requests
 import retrying
 import rtree
 import shapely.geometry
@@ -37,7 +38,6 @@ COUNTRY_BORDER_VECTOR_URI = (
     'gs://natgeo-dams-data/ecoshards/'
     'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg')
 WORK_DATABASE_PATH = os.path.join(CHURN_DIR, 'natgeo_dams_database.db')
-
 logging.basicConfig(
     filename='log.txt',
     level=logging.DEBUG,
@@ -48,6 +48,8 @@ LOGGER = logging.getLogger(__name__)
 logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 ISO_CODES_TO_SKIP = ['ATA']
+PLANET_API_KEY_FILE = 'planet_api_key.txt'
+MOSAIC_ID = '4ce5863a-fb3f-4cad-a899-b8c053af1858'
 
 
 def compute_resize_scale(image_shape, min_side=800, max_side=1333):
@@ -331,6 +333,27 @@ def copy_from_gs(gs_uri, target_path):
         (gs_uri, target_path), shell=True)
 
 
+@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
+def get_quad_ids(session, mosaic_id, min_x, min_y, max_x, max_y):
+    bb_query_url = (
+        'https://api.planet.com/basemaps/v1/mosaics/'
+        '%s/quads?bbox=%f,%f,%f,%f' % (
+            mosaic_id, min_x, min_y, max_x, max_y))
+    mosaics_response = session.get(bb_query_url, timeout=5.0)
+    mosaics_json = mosaics_response.json()
+    LOGGER.debug('%s: %s', mosaics_response, mosaics_json)
+    quad_id_list = []
+    while True:
+        quad_id_list.extend(
+            [item['id'] for item in mosaics_json['items']])
+        if '_next' in mosaics_json['_links']:
+            mosaics_json = session.get(
+                mosaics_json['_links']['_next'], timeout=5.0).json()
+        else:
+            break
+    return quad_id_list
+
+
 def main():
     """Entry point."""
     # parse arguments
@@ -375,6 +398,15 @@ def main():
             FROM work_status
             WHERE country_list NOT LIKE "%ZAF%" AND processed=0
             ''', WORK_DATABASE_PATH, argument_list=[], fetch='all'))
+
+    # find the most recent mosaic we can use
+    with open(PLANET_API_KEY_FILE, 'r') as planet_api_key_file:
+        planet_api_key = planet_api_key_file.read().rstrip()
+
+    session = requests.Session()
+    session.auth = (planet_api_key, '')
+    for (grid_id, lng_min, lat_min, lng_max, lat_max) in work_grid_list:
+        get_quad_ids(session, MOSAIC_ID, min_x, min_y, max_x, max_y)
 
     LOGGER.debug(work_grid_list)
 
