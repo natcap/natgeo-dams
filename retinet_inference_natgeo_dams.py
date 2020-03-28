@@ -530,6 +530,8 @@ def process_quad_worker(planet_api_key, quad_queue, work_queue):
                             LOGGER.exception(
                                 'something bad happened, skipping %s'
                                 % quad_png_path)
+            if os.path.exists(target_quad_path):
+                os.remove(target_quad_path)
     except Exception:
         LOGGER.exception('error occured')
         raise
