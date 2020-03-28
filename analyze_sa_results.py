@@ -7,7 +7,7 @@ import sys
 
 from osgeo import gdal
 import rtree
-import shapely
+import shapely.wkb
 
 KNOWN_DAMS_VECTOR_PATH = r"C:\Users\richp\Downloads\south_africa_known_dams.gpkg"
 NATGEO_DETECTED_DAMS_DB_PATH = r"C:\Users\richp\Documents\annotated_dams\natgeo_dams_database.db"
@@ -96,7 +96,7 @@ if __name__ == '__main__':
         FROM detected_dams
         WHERE country_list LIKE '%ZAF%'
         GROUP BY lng_min, lat_min, lng_max, lat_max
-        ''', NATGEO_DETECTED_DAMS_DB_PATH, fetch='all')
+        ''', NATGEO_DETECTED_DAMS_DB_PATH, fetch='all', argument_list=[])
     LOGGER.debug("build rtree")
     zaf_index = rtree.index.Index()
     for index, (lng_min, lat_min, lng_max, lat_max) in enumerate(
@@ -112,7 +112,6 @@ if __name__ == '__main__':
         known_dam_geometry = known_dam_feature.GetGeometryRef()
         known_dams_count += 1
         known_dam_box = shapely.wkb.loads(known_dam_geometry.ExportToWkb())
-        if list(zaf_index.intersection(*known_dam_box)):
-            LOGGER.debug('found it')
+        if list(zaf_index.intersection(*(known_dam_box.bounds))):
             found_dams_count += 1
     LOGGER.debug('%d: %d', known_dams_count, found_dams_count)

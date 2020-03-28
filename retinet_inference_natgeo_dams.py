@@ -491,13 +491,13 @@ def grid_done_worker(work_database_path, grid_done_queue):
             if count > 0:
                 grid_status[grid_id] += count
                 LOGGER.debug('got %d work for %s', count, grid_id)
+                LOGGER.debug('grid_status: %s', grid_status)
             else:
                 grid_status[grid_id] -= count
                 LOGGER.debug('one element done for %s', grid_id)
             if grid_status[grid_id] == 0:
                 LOGGER.debug('all done updating database! %s', grid_id)
                 del grid_status[grid_id]
-                ### update database
                 _execute_sqlite(
                     '''
                     UPDATE work_status
@@ -586,7 +586,8 @@ def detect_dams_worker(work_queue, inference_queue):
 
             raw_image = read_image_bgr(image_path)
             image = preprocess_image(raw_image)
-            scale = compute_resize_scale(image.shape, min_side=800, max_side=1333)
+            scale = compute_resize_scale(
+                image.shape, min_side=800, max_side=1333)
             image = cv2.resize(image, None, fx=scale, fy=scale)
             if keras.backend.image_data_format() == 'channels_first':
                 image = image.transpose((2, 0, 1))
@@ -662,6 +663,7 @@ def postprocessing_worker(
             else:
                 # no dams detected
                 os.remove(image_path)
+                grid_done_queue.put((grid_id, -1))
                 continue
 
             # transform local bbs so they're relative to the png
