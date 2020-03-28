@@ -6,6 +6,8 @@ import sqlite3
 import sys
 
 from osgeo import gdal
+from osgeo import osr
+from osgeo import ogr
 import rtree
 import shapely.wkb
 
@@ -98,14 +100,27 @@ if __name__ == '__main__':
         GROUP BY lng_min, lat_min, lng_max, lat_max
         ''', NATGEO_DETECTED_DAMS_DB_PATH, fetch='all', argument_list=[])
     LOGGER.debug("build rtree")
+
+    gpkg_driver = ogr.GetDriverByName('GPKG')
+    vector = gpkg_driver.CreateDataSource('sa_found.gpkg')
+    wgs84_srs = osr.SpatialReference()
+    wgs84_srs.ImportFromEPSG(4326)
+    layer = vector.CreateLayer('sa_found', wgs84_srs, geom_type=ogr.wkbPolygon)
+
+    layer.StartTransaction()
     zaf_index = rtree.index.Index()
     for index, (lng_min, lat_min, lng_max, lat_max) in enumerate(
             bounding_box_list):
+        box = shapely.geometry.box(lng_min, lat_min, lng_max, lat_max)
+        ogr_box = ogr.CreateGeometryFromWkb(box.wkb)
+        feature = ogr.Feature(layer.GetLayerDefn())
+        feature.SetGeometry(ogr.CreateGeometryFromWkb(box.wkb))
+        layer.CreateFeature(feature)
         zaf_index.insert(index, (lng_min, lat_min, lng_max, lat_max))
+    layer.CommitTransaction()
 
-        known_dams_vector = gdal.OpenEx(KNOWN_DAMS_VECTOR_PATH, gdal.OF_VECTOR)
+    known_dams_vector = gdal.OpenEx(KNOWN_DAMS_VECTOR_PATH, gdal.OF_VECTOR)
     known_dams_layer = known_dams_vector.GetLayer()
-    detected_dams_index = rtree.index.Index()
     known_dams_count = 0
     found_dams_count = 0
     for known_dam_feature in known_dams_layer:

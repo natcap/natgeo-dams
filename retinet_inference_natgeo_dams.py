@@ -687,11 +687,18 @@ def postprocessing_worker(
                 y_min, y_max = sorted([y_a, y_b])
                 x_y_bounding_box = [
                     x_min, y_min, x_max, y_max]
+                LOGGER.debug('original bounding box: %s', bounding_box)
+                LOGGER.debug('xoff: %s yoff: %s', xoff, yoff)
+                LOGGER.debug('global_bounding_box: %s', global_bounding_box)
+                LOGGER.debug('xy bounding box: %s', x_y_bounding_box)
 
                 lng_lat_bounding_box = \
                     pygeoprocessing.transform_bounding_box(
                         x_y_bounding_box, quad_info['projection'],
                         WGS84_WKT)
+                LOGGER.debug('lng_lat_bounding_box: %s', lng_lat_bounding_box)
+
+                sys.exit(0)
 
                 # get country intersection list
                 shapely_box = shapely.geometry.box(
@@ -809,7 +816,7 @@ def main():
     with open(PLANET_API_KEY_FILE, 'r') as planet_api_key_file:
         planet_api_key = planet_api_key_file.read().rstrip()
     process_quad_worker_list = []
-    for _ in range(4):
+    for _ in range(1):
         process_quad_worker_process = threading.Thread(
             target=process_quad_worker,
             args=(planet_api_key, quad_queue, work_queue, grid_done_queue))
@@ -817,7 +824,7 @@ def main():
         process_quad_worker_list.append(process_quad_worker_process)
 
     detect_dams_worker_list = []
-    for _ in range(4):
+    for _ in range(1):
         detect_dams_worker_process = threading.Thread(
             target=detect_dams_worker,
             args=(work_queue, inference_queue))
@@ -830,7 +837,7 @@ def main():
     inference_worker_thread.start()
 
     postprocessing_worker_list = []
-    for _ in range(4):
+    for _ in range(1):
         postprocessing_worker_process = threading.Thread(
             target=postprocessing_worker,
             args=(
