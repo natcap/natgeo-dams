@@ -5,10 +5,12 @@ Adapted from: https://github.com/fizyr/keras-retinanet
 import argparse
 import logging
 import os
+import multiprocessing
 import pathlib
 import subprocess
 import sqlite3
 import sys
+import threading
 
 from keras_retinanet import models
 from keras_retinanet.utils.gpu import setup_gpu
@@ -600,62 +602,265 @@ def process_quad(
                         'something bad happened, skipping %s' % quad_png_path)
 
 
-def detect_dams(model, image_path):
-    """Detect dams in the image and annotate if found.
+def process_quad_worker(planet_api_key, quad_queue, work_queue):
+    while True:
+        quad_id = quad_queue.get()
+        if quad_id == 'STOP':
+            quad_queue.put('STOP')
+            break
 
-    Parameters:
-        model (keras): model that can do bounding box detection.
-        image_path (str): path to png to do image detection on.
+        LOGGER.debug('attempting to process grid %s', quad_id)
+        gs_uri = _execute_sqlite(
+            '''
+            SELECT gs_uri
+            FROM quad_cache_table
+            WHERE quad_id=?;
+            ''', QUAD_CACHE_DB_PATH, argument_list=[quad_id], fetch='one')
+        LOGGER.debug('%s: %s', quad_id, gs_uri)
+        target_quad_path = os.path.join(CHURN_DIR, '%s.tif' % quad_id)
+        if gs_uri is None:
+            fetch_quad(
+                planet_api_key, MOSAIC_ID, quad_id, target_quad_path,
+                QUAD_CACHE_DB_PATH)
+        else:
+            copy_from_gs(gs_uri[0], target_quad_path)
 
-    Returns:
-        List of (box, score) tuples for every bounding box found.
+        quad_info = pygeoprocessing.get_raster_info(target_quad_path)
+        n_cols, n_rows = quad_info['raster_size']
+        # extract the bounding boxes
+        quad_slice_index = 0
+        for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
+            win_xsize = TRAINING_IMAGE_DIMS[0]
+            if xoff + win_xsize >= n_cols:
+                xoff = n_cols-win_xsize-1
+            for yoff in range(0, n_rows, TRAINING_IMAGE_DIMS[1]):
+                win_ysize = TRAINING_IMAGE_DIMS[1]
+                if yoff + win_ysize >= n_rows:
+                    yoff = n_rows-win_ysize-1
+                    try:
+                        quad_png_path = os.path.join(
+                            CHURN_DIR, '%s_%d.png' % (
+                                quad_id, quad_slice_index))
+                        quad_slice_index += 1
+                        make_quad_png(
+                            target_quad_path, quad_png_path,
+                            xoff, yoff, win_xsize, win_ysize)
+                        work_queue.put(
+                            (quad_png_path, xoff, yoff, quad_info.copy()))
+                    except Exception:
+                        LOGGER.exception(
+                            'something bad happened, skipping %s'
+                            % quad_png_path)
 
-    """
-    raw_image = read_image_bgr(image_path)
-    image = preprocess_image(raw_image.copy())
-    scale = compute_resize_scale(image.shape, min_side=800, max_side=1333)
-    image = cv2.resize(image, None, fx=scale, fy=scale)
-    if keras.backend.image_data_format() == 'channels_first':
-        image = image.transpose((2, 0, 1))
-    boxes, scores, labels = model.predict_on_batch(
-        numpy.expand_dims(image, axis=0))[:3]
-    # correct boxes for image scale
-    boxes /= scale
 
-    non_max_supression_box_list = []
-    # convert box to a list from a numpy array and score to a value from
-    # a single element array
-    box_score_tuple_list = [
-        (list(box), score) for box, score in zip(boxes[0], scores[0])
-        if score > 0.3]
-    while box_score_tuple_list:
-        box, score = box_score_tuple_list.pop()
-        shapely_box = shapely.geometry.box(*box)
-        keep = True
-        # this list makes a copy
-        for test_box, test_score in list(box_score_tuple_list):
-            shapely_test_box = shapely.geometry.box(*test_box)
-            if shapely_test_box.intersects(shapely_box):
-                if test_score > score:
-                    # keep the new one
-                    keep = False
-                    break
-        if keep:
-            non_max_supression_box_list.append((box, score))
+def detect_dams_worker(work_queue, inference_queue):
+    """Process work queue for image_path then pass to inference."""
+    while True:
+        payload = work_queue.get()
+        if payload == 'STOP':
+            payload.put('STOP')
+            break
+        image_path, xoff, yoff, quad_info = payload
 
-    # no dams detected, just skip
-    if not non_max_supression_box_list:
-        LOGGER.debug('nothing found')
-        return None
-    LOGGER.debug('found %d dams', len(non_max_supression_box_list))
-    for box, score in non_max_supression_box_list:
-        detected_box = shapely.geometry.box(*box)
-        color = (255, 102, 179)
-        draw_box(raw_image, detected_box.bounds, color, 1)
-        draw_caption(raw_image, detected_box.bounds, str(score))
+        raw_image = read_image_bgr(image_path)
+        image = preprocess_image(raw_image)
+        scale = compute_resize_scale(image.shape, min_side=800, max_side=1333)
+        image = cv2.resize(image, None, fx=scale, fy=scale)
+        if keras.backend.image_data_format() == 'channels_first':
+            image = image.transpose((2, 0, 1))
+        inference_queue.put((image, scale, image_path, xoff, yoff, quad_info))
 
-    cv2.imwrite(image_path, raw_image)
-    return non_max_supression_box_list
+
+def inference_worker(model, inference_queue, postprocessing_queue):
+    """Do inference."""
+    while True:
+        payload = inference_queue.get()
+        if payload == 'STOP':
+            inference_queue.put('STOP')
+            break
+        image, scale, image_path, xoff, yoff, quad_info = payload
+        boxes, scores, labels = model.predict_on_batch(
+            numpy.expand_dims(image, axis=0))[:3]
+        # correct boxes for image scale
+        boxes /= scale
+        postprocessing_queue.put(
+            (boxes, scores, image_path, xoff, yoff, quad_info))
+
+
+def postprocessing_worker(
+        postprocessing_queue, country_borders_vector_path, work_database_path):
+    """Get detected images, annotate them, and stick them in the db."""
+    while True:
+        payload = postprocessing_queue.get()
+        if payload == 'STOP':
+            postprocessing_queue.put('STOP')
+            break
+        boxes, scores, image_path, xoff, yoff, quad_info = payload
+        non_max_supression_box_list = []
+        # convert box to a list from a numpy array and score to a value from
+        # a single element array
+        box_score_tuple_list = [
+            (list(box), score) for box, score in zip(boxes[0], scores[0])
+            if score > 0.3]
+        while box_score_tuple_list:
+            box, score = box_score_tuple_list.pop()
+            shapely_box = shapely.geometry.box(*box)
+            keep = True
+            # this list makes a copy
+            for test_box, test_score in list(box_score_tuple_list):
+                shapely_test_box = shapely.geometry.box(*test_box)
+                if shapely_test_box.intersects(shapely_box):
+                    if test_score > score:
+                        # keep the new one
+                        keep = False
+                        break
+            if keep:
+                non_max_supression_box_list.append((box, score))
+
+        # no dams detected, just skip
+        if non_max_supression_box_list:
+            LOGGER.debug('found %d dams', len(non_max_supression_box_list))
+            raw_image = read_image_bgr(image_path)
+            for box, score in non_max_supression_box_list:
+                detected_box = shapely.geometry.box(*box)
+                color = (255, 102, 179)
+                draw_box(raw_image, detected_box.bounds, color, 1)
+                draw_caption(raw_image, detected_box.bounds, str(score))
+
+            cv2.imwrite(image_path, raw_image)
+
+        if non_max_supression_box_list is None:
+            # no dams detected
+            os.remove(image_path)
+            continue
+
+        # transform local bbs so they're relative to the png
+        lng_lat_score_list = []
+        for bounding_box, score in non_max_supression_box_list:
+            global_bounding_box = [
+                bounding_box[0]+xoff,
+                bounding_box[1]+yoff,
+                bounding_box[2]+xoff,
+                bounding_box[3]+yoff]
+
+            # convert to lat/lng
+            geotransform = quad_info['projection']
+            x_a, y_a = [int(x) for x in gdal.ApplyGeoTransform(
+                geotransform, global_bounding_box[0],
+                global_bounding_box[1])]
+            x_b, y_b = [int(x) for x in gdal.ApplyGeoTransform(
+                geotransform, global_bounding_box[2],
+                global_bounding_box[3])]
+            x_min, x_max = sorted([x_a, x_b])
+            y_min, y_max = sorted([y_a, y_b])
+            x_y_bounding_box = [
+                x_min, y_min, x_max, y_max]
+
+            lng_lat_bounding_box = \
+                pygeoprocessing.transform_bounding_box(
+                    x_y_bounding_box, quad_info['projection'],
+                    WGS84_WKT)
+
+            # get country intersection list
+            shapely_box = shapely.geometry.box(
+                *lng_lat_bounding_box)
+
+            country_intersection_list = \
+                get_country_intersection_list(
+                    shapely_box,
+                    country_borders_vector_path)
+
+            lng_lat_score_list.append((
+                lng_lat_bounding_box + [
+                    float(score),
+                    ','.join(country_intersection_list),
+                    image_path]))
+
+        # upload .pngs to bucket
+        try:
+            quad_uri = (
+                'gs://natgeo-dams-data/detected_dam_data/'
+                'annotated_imagery/%s' % os.path.basename(
+                    image_path))
+            subprocess.run(
+                'gsutil mv %s %s'
+                % (image_path, quad_uri), shell=True,
+                check=True)
+        except subprocess.CalledProcessError:
+            LOGGER.warning(
+                'file might already exist -- not uploading')
+            if os.path.exists(image_path):
+                os.remove(image_path)
+
+        LOGGER.debug('******* inserting the following into the table: %s', str(lng_lat_score_list))
+        _execute_sqlite(
+            """
+            INSERT INTO
+            detected_dams
+                (lng_min, lat_min, lng_max, lat_max, probability,
+                 country_list, image_uri)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, work_database_path,
+            argument_list=lng_lat_score_list, mode='modify',
+            execute='many')
+
+
+# def detect_dams(model, image_path):
+#     """Detect dams in the image and annotate if found.
+
+#     Parameters:
+#         model (keras): model that can do bounding box detection.
+#         image_path (str): path to png to do image detection on.
+
+#     Returns:
+#         List of (box, score) tuples for every bounding box found.
+
+#     """
+#     raw_image = read_image_bgr(image_path)
+#     image = preprocess_image(raw_image.copy())
+#     scale = compute_resize_scale(image.shape, min_side=800, max_side=1333)
+#     image = cv2.resize(image, None, fx=scale, fy=scale)
+#     if keras.backend.image_data_format() == 'channels_first':
+#         image = image.transpose((2, 0, 1))
+#     boxes, scores, labels = model.predict_on_batch(
+#         numpy.expand_dims(image, axis=0))[:3]
+#     # correct boxes for image scale
+#     boxes /= scale
+
+#     non_max_supression_box_list = []
+#     # convert box to a list from a numpy array and score to a value from
+#     # a single element array
+#     box_score_tuple_list = [
+#         (list(box), score) for box, score in zip(boxes[0], scores[0])
+#         if score > 0.3]
+#     while box_score_tuple_list:
+#         box, score = box_score_tuple_list.pop()
+#         shapely_box = shapely.geometry.box(*box)
+#         keep = True
+#         # this list makes a copy
+#         for test_box, test_score in list(box_score_tuple_list):
+#             shapely_test_box = shapely.geometry.box(*test_box)
+#             if shapely_test_box.intersects(shapely_box):
+#                 if test_score > score:
+#                     # keep the new one
+#                     keep = False
+#                     break
+#         if keep:
+#             non_max_supression_box_list.append((box, score))
+
+#     # no dams detected, just skip
+#     if not non_max_supression_box_list:
+#         LOGGER.debug('nothing found')
+#         return None
+#     LOGGER.debug('found %d dams', len(non_max_supression_box_list))
+#     for box, score in non_max_supression_box_list:
+#         detected_box = shapely.geometry.box(*box)
+#         color = (255, 102, 179)
+#         draw_box(raw_image, detected_box.bounds, color, 1)
+#         draw_caption(raw_image, detected_box.bounds, str(score))
+
+#     cv2.imwrite(image_path, raw_image)
+#     return non_max_supression_box_list
 
 
 def main():
@@ -711,9 +916,44 @@ def main():
             WHERE country_list NOT LIKE "%ZAF%" AND processed=0
             ''', WORK_DATABASE_PATH, argument_list=[], fetch='all'))
 
+    quad_queue = multiprocessing.Queue(10)
+    work_queue = multiprocessing.Queue(10)
+    inference_queue = multiprocessing.Queue(10)
+    postprocessing_queue = multiprocessing.Queue(10)
+
     # find the most recent mosaic we can use
     with open(PLANET_API_KEY_FILE, 'r') as planet_api_key_file:
         planet_api_key = planet_api_key_file.read().rstrip()
+    process_quad_worker_list = []
+    for _ in range(4):
+        process_quad_worker_process = threading.Thread(
+            target=process_quad_worker,
+            args=(planet_api_key, quad_queue, work_queue))
+        process_quad_worker_process.start()
+        process_quad_worker_list.append(process_quad_worker_process)
+
+    detect_dams_worker_list = []
+    for _ in range(4):
+        detect_dams_worker_process = threading.Thread(
+            target=detect_dams_worker,
+            args=(work_queue, inference_queue))
+        detect_dams_worker_process.start()
+        detect_dams_worker_list.append(detect_dams_worker_process)
+
+    inference_worker_thread = threading.Thread(
+        target=inference_worker,
+        args=(model, inference_queue, postprocessing_queue))
+    inference_worker_thread.start()
+
+    postprocessing_worker_list = []
+    for _ in range(4):
+        postprocessing_worker_process = threading.Thread(
+            target=postprocessing_worker,
+            args=(
+                postprocessing_queue, country_borders_vector_path,
+                WORK_DATABASE_PATH))
+        postprocessing_worker_process.start()
+        postprocessing_worker_list.append(postprocessing_worker_process)
 
     session = requests.Session()
     session.auth = (planet_api_key, '')
@@ -721,36 +961,55 @@ def main():
         quad_id_list = get_quad_ids(
             session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
         for quad_id in quad_id_list:
-            LOGGER.debug('attempting to process grid %s', grid_id)
-            gs_uri = _execute_sqlite(
-                '''
-                SELECT gs_uri
-                FROM quad_cache_table
-                WHERE quad_id=?;
-                ''', QUAD_CACHE_DB_PATH, argument_list=[quad_id], fetch='one')
-            LOGGER.debug('%s: %s', quad_id, gs_uri)
-            target_quad_path = os.path.join(CHURN_DIR, '%s.tif' % quad_id)
-            if gs_uri is None:
-                fetch_quad(
-                    planet_api_key, MOSAIC_ID, quad_id, target_quad_path,
-                    QUAD_CACHE_DB_PATH)
-            else:
-                copy_from_gs(gs_uri[0], target_quad_path)
-            # cut quad into 419 x 419 blocks
-            process_quad(
-                model, target_quad_path, quad_id, country_borders_vector_path,
-                WORK_DATABASE_PATH)
+            quad_queue.put(quad_id)
+        #     LOGGER.debug('attempting to process grid %s', grid_id)
+        #     gs_uri = _execute_sqlite(
+        #         '''
+        #         SELECT gs_uri
+        #         FROM quad_cache_table
+        #         WHERE quad_id=?;
+        #         ''', QUAD_CACHE_DB_PATH, argument_list=[quad_id], fetch='one')
+        #     LOGGER.debug('%s: %s', quad_id, gs_uri)
+        #     target_quad_path = os.path.join(CHURN_DIR, '%s.tif' % quad_id)
+        #     if gs_uri is None:
+        #         fetch_quad(
+        #             planet_api_key, MOSAIC_ID, quad_id, target_quad_path,
+        #             QUAD_CACHE_DB_PATH)
+        #     else:
+        #         copy_from_gs(gs_uri[0], target_quad_path)
+        #     # cut quad into 419 x 419 blocks
+        #     process_quad(
+        #         model, target_quad_path, quad_id, country_borders_vector_path,
+        #         WORK_DATABASE_PATH)
+        #     os.remove(target_quad_path)
 
-            os.remove(target_quad_path)
+        # # update grid as processed
+        # _execute_sqlite(
+        #     """
+        #     UPDATE work_status
+        #     SET processed=1
+        #     WHERE grid_id=?;
+        #     """, WORK_DATABASE_PATH,
+        #     argument_list=[grid_id], mode='modify', execute='execute')
 
-        # update grid as processed
-        _execute_sqlite(
-            """
-            UPDATE work_status
-            SET processed=1
-            WHERE grid_id=?;
-            """, WORK_DATABASE_PATH,
-            argument_list=[grid_id], mode='modify', execute='execute')
+    LOGGER.debug('waiting for quad workers to stop')
+    quad_queue.put('STOP')
+    for quad_worker_process in process_quad_worker_list:
+        quad_worker_process.join()
+
+    LOGGER.debug('waiting for detect dams to stop')
+    work_queue.put('STOP')
+    for detect_dams_process in detect_dams_worker_list:
+        detect_dams_process.join()
+
+    LOGGER.debug('waiting for inference worker to stop')
+    inference_queue.put('STOP')
+    inference_worker_thread.join()
+
+    LOGGER.debug('waiting for postprocessing worker to stop')
+    postprocessing_queue.put('STOP')
+    for postprocessing_worker_process in postprocessing_worker_list:
+        postprocessing_worker_process.join()
 
     task_graph.join()
     task_graph.close()
