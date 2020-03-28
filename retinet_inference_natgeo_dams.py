@@ -488,12 +488,11 @@ def grid_done_worker(work_database_path, grid_done_queue):
             if payload == 'STOP':
                 break
             grid_id, count = payload
+            grid_status[grid_id] += count
             if count > 0:
-                grid_status[grid_id] += count
                 LOGGER.debug('got %d work for %s', count, grid_id)
                 LOGGER.debug('grid_status: %s', grid_status)
             else:
-                grid_status[grid_id] -= count
                 LOGGER.debug('one element done for %s', grid_id)
             if grid_status[grid_id] == 0:
                 LOGGER.debug('all done updating database! %s', grid_id)
@@ -678,10 +677,10 @@ def postprocessing_worker(
 
                 # convert to lat/lng
                 geotransform = quad_info['geotransform']
-                x_a, y_a = [int(x) for x in gdal.ApplyGeoTransform(
+                x_a, y_a = [x for x in gdal.ApplyGeoTransform(
                     geotransform, global_bounding_box[0],
                     global_bounding_box[1])]
-                x_b, y_b = [int(x) for x in gdal.ApplyGeoTransform(
+                x_b, y_b = [x for x in gdal.ApplyGeoTransform(
                     geotransform, global_bounding_box[2],
                     global_bounding_box[3])]
                 x_min, x_max = sorted([x_a, x_b])
