@@ -558,7 +558,8 @@ def process_quad_worker(
                                 target_quad_path, quad_png_path,
                                 xoff, yoff, win_xsize, win_ysize)
                             LOGGER.debug(
-                                'sending this to work queue: %s', quad_png_path)
+                                'sending this to work queue: %s',
+                                quad_png_path)
                             work_queue.put(
                                 (grid_id, quad_png_path, xoff, yoff,
                                  quad_info.copy()))
@@ -697,8 +698,6 @@ def postprocessing_worker(
                         x_y_bounding_box, quad_info['projection'],
                         WGS84_WKT)
                 LOGGER.debug('lng_lat_bounding_box: %s', lng_lat_bounding_box)
-
-                sys.exit(0)
 
                 # get country intersection list
                 shapely_box = shapely.geometry.box(
