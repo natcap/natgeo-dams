@@ -5,7 +5,6 @@ import multiprocessing
 import pathlib
 import sqlite3
 import subprocess
-import sys
 
 from osgeo import gdal
 from osgeo import osr

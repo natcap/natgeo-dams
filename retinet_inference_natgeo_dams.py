@@ -490,19 +490,22 @@ def grid_done_worker(work_database_path, grid_done_queue):
             grid_id, count = payload
             if count > 0:
                 grid_status[grid_id] += count
+                LOGGER.debug('got %d work for %s', count, grid_id)
             else:
                 grid_status[grid_id] -= count
-                if grid_status[grid_id] == 0:
-                    del grid_status[grid_id]
-                    ### update database
-                    _execute_sqlite(
-                        '''
-                        UPDATE work_status
-                        SET processed=1
-                        WHERE grid_id=?;
-                        ''', work_database_path,
-                        mode='modify', execute='execute',
-                        argument_list=[grid_id])
+                LOGGER.debug('one element done for %s', grid_id)
+            if grid_status[grid_id] == 0:
+                LOGGER.debug('all done updating database! %s', grid_id)
+                del grid_status[grid_id]
+                ### update database
+                _execute_sqlite(
+                    '''
+                    UPDATE work_status
+                    SET processed=1
+                    WHERE grid_id=?;
+                    ''', work_database_path,
+                    mode='modify', execute='execute',
+                    argument_list=[grid_id])
     except Exception:
         LOGGER.exception('error occured')
         raise
