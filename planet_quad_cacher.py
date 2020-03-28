@@ -210,11 +210,12 @@ def fetch_quad(
 
         try:
             subprocess.run(
-                '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil mv %s %s'
+                'gsutil mv %s %s'
                 % (local_quad_path, quad_uri), shell=True, check=True)
         except subprocess.CalledProcessError:
             LOGGER.warning('file might already exist')
 
+        os.remove(local_quad_path)
         LOGGER.debug(
             'update sqlite table with these args: %s', sqlite_update_variables)
         _execute_sqlite(
