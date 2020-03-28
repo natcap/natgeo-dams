@@ -540,6 +540,7 @@ def process_quad_worker(
             n_cols, n_rows = quad_info['raster_size']
             # extract the bounding boxes
             quad_slice_index = 0
+            grid_done_queue.put((grid_id, 1000))
             for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
                 win_xsize = TRAINING_IMAGE_DIMS[0]
                 if xoff + win_xsize >= n_cols:
@@ -562,13 +563,15 @@ def process_quad_worker(
                             work_queue.put(
                                 (grid_id, quad_png_path, xoff, yoff,
                                  quad_info.copy()))
+                            grid_done_queue.put((grid_id, 1))
                         except Exception:
                             LOGGER.exception(
                                 'something bad happened, skipping %s'
                                 % quad_png_path)
             if os.path.exists(target_quad_path):
                 os.remove(target_quad_path)
-            grid_done_queue.put((grid_id, quad_slice_index))
+            # this way it can't be done until all the work is sent
+            grid_done_queue.put((grid_id, -1000))
     except Exception:
         LOGGER.exception('error occured')
         raise
