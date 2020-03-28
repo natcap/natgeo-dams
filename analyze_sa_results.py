@@ -112,6 +112,6 @@ if __name__ == '__main__':
         known_dam_geometry = known_dam_feature.GetGeometryRef()
         known_dams_count += 1
         known_dam_box = shapely.wkb.loads(known_dam_geometry.ExportToWkb())
-        if list(zaf_index.intersection(*(known_dam_box.bounds))):
+        if list(zaf_index.intersection(known_dam_box.bounds)):
             found_dams_count += 1
     LOGGER.debug('%d: %d', known_dams_count, found_dams_count)
