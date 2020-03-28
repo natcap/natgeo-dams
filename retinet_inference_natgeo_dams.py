@@ -489,11 +489,8 @@ def grid_done_worker(work_database_path, grid_done_queue):
                 break
             grid_id, count = payload
             grid_status[grid_id] += count
-            if count > 0:
-                LOGGER.debug('got %d work for %s', count, grid_id)
-                LOGGER.debug('grid_status: %s', grid_status)
-            else:
-                LOGGER.debug('one element done for %s', grid_id)
+            LOGGER.debug('got %d work for %s', count, grid_id)
+            LOGGER.debug('grid_status: %s', grid_status)
             if grid_status[grid_id] == 0:
                 LOGGER.debug('all done updating database! %s', grid_id)
                 del grid_status[grid_id]
