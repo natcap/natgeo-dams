@@ -1,6 +1,7 @@
 """Tracer code to set up training pipeline."""
 import os
 import logging
+import multiprocessing
 import pathlib
 import sqlite3
 import subprocess
@@ -23,6 +24,8 @@ ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
 CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
 QUAD_DIR = os.path.join(CHURN_DIR, 'quads')
 DATABASE_PATH = os.path.join(WORKSPACE_DIR, 'quad_uri.db')
+N_WORKERS = 4
+
 
 COUNTRY_BORDER_VECTOR_URI = (
     'gs://natgeo-dams-data/ecoshards/'
@@ -42,7 +45,7 @@ logging.basicConfig(
     format=(
         '%(asctime)s (%(relativeCreated)d) %(processName)s %(levelname)s '
         '%(name)s [%(funcName)s:%(lineno)d] %(message)s'),
-    stream=sys.stdout)
+    filename='quad_cache_log.txt')
 LOGGER = logging.getLogger(__name__)
 
 
@@ -151,10 +154,24 @@ def create_status_database(database_path):
     connection.close()
 
 
+def fetch_quad_worker(
+        work_queue, planet_api_key, quad_database_path, cache_dir):
+    """Pull tuples from `work_queue` and process."""
+    session = requests.Session()
+    session.auth = (planet_api_key, '')
+
+    while True:
+        payload = work_queue.get()
+        if payload == 'STOP':
+            work_queue.put(payload)
+            mosaic_id, quad_id = payload
+            fetch_quad(
+                session, quad_database_path, mosaic_id, quad_id, cache_dir)
+
+
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def fetch_quad(
-        session, quad_database_path, planet_api_key, mosaic_id, quad_id,
-        cache_dir):
+        session, quad_database_path, mosaic_id, quad_id, cache_dir):
     try:
         count = _execute_sqlite(
             '''
@@ -297,6 +314,15 @@ def main():
     global_shapely_prep = shapely.prepared.prep(global_poly_task.get())
     LOGGER.debug('start quad search')
 
+    work_process_list = []
+    work_queue = multiprocessing.Queue(N_WORKERS*2)
+    for worker_id in range(N_WORKERS):
+        work_process = multiprocessing.Process(
+            target=fetch_quad_worker,
+            args=(work_queue, planet_api_key, DATABASE_PATH, QUAD_DIR))
+        work_process.start()
+        work_process_list.append(work_process)
+
     for lat in range(-60, 60):
         for lng in range(-180, 180):
             query_box = shapely.geometry.box(lng, lat, lng+1, lat+1)
@@ -308,10 +334,11 @@ def main():
                 continue
             LOGGER.debug('%d %d %s', lat, lng, str(quad_id_list))
             for quad_id in quad_id_list:
-                fetch_quad(
-                    session, DATABASE_PATH, planet_api_key, MOSAIC_ID, quad_id,
-                    QUAD_DIR)
+                work_queue.put((MOSAIC_ID, quad_id))
 
+    work_queue.put('STOP')
+    for worker_process in work_process_list:
+        worker_process.join()
     LOGGER.debug('ALL DONE!')
 
 
