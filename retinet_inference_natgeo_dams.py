@@ -19,6 +19,7 @@ from keras_retinanet.utils.keras_version import check_keras_version
 from keras_retinanet.utils.tf_version import check_tf_version
 from osgeo import gdal
 from osgeo import osr
+from osgeo import ogr
 import cv2
 import ecoshard
 import keras
@@ -372,16 +373,32 @@ def get_quad_ids(session, mosaic_id, min_x, min_y, max_x, max_y):
             mosaic_id, min_x, min_y, max_x, max_y))
     mosaics_response = session.get(bb_query_url, timeout=5.0)
     mosaics_json = mosaics_response.json()
-    LOGGER.debug('%s: %s', mosaics_response, mosaics_json)
+    LOGGER.debug('quad response %s: %s', mosaics_response, mosaics_json)
     quad_id_list = []
+    gpkg_driver = ogr.GetDriverByName('GPKG')
+    gpgk_path = '%.2f_%.2f_%.2f_%.2f.gpkg' % (min_x, min_y, max_x, max_y)
+    vector = gpkg_driver.CreateDataSource(gpgk_path)
+    wgs84_srs = osr.SpatialReference()
+    wgs84_srs.ImportFromEPSG(4326)
+    layer = vector.CreateLayer('bbetst', wgs84_srs, geom_type=ogr.wkbPolygon)
+
+    layer.StartTransaction()
     while True:
         quad_id_list.extend(
             [item['id'] for item in mosaics_json['items']])
+
+        for item in mosaics_json['items']:
+            box = shapely.geometry.box(*item['bbox'])
+            feature = ogr.Feature(layer.GetLayerDefn())
+            feature.SetGeometry(ogr.CreateGeometryFromWkb(box.wkb))
+            layer.CreateFeature(feature)
         if '_next' in mosaics_json['_links']:
+            LOGGER.debug('_next in %s')
             mosaics_json = session.get(
                 mosaics_json['_links']['_next'], timeout=5.0).json()
         else:
             break
+    layer.CommitTransaction()
     return quad_id_list
 
 
@@ -812,7 +829,7 @@ def main():
     with open(PLANET_API_KEY_FILE, 'r') as planet_api_key_file:
         planet_api_key = planet_api_key_file.read().rstrip()
     process_quad_worker_list = []
-    for _ in range(1):
+    for _ in range(5):
         process_quad_worker_process = threading.Thread(
             target=process_quad_worker,
             args=(planet_api_key, quad_queue, work_queue, grid_done_queue))
@@ -820,7 +837,7 @@ def main():
         process_quad_worker_list.append(process_quad_worker_process)
 
     detect_dams_worker_list = []
-    for _ in range(1):
+    for _ in range(5):
         detect_dams_worker_process = threading.Thread(
             target=detect_dams_worker,
             args=(work_queue, inference_queue))
@@ -833,7 +850,7 @@ def main():
     inference_worker_thread.start()
 
     postprocessing_worker_list = []
-    for _ in range(1):
+    for _ in range(5):
         postprocessing_worker_process = threading.Thread(
             target=postprocessing_worker,
             args=(
