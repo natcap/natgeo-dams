@@ -645,6 +645,8 @@ def process_quad_worker(planet_api_key, quad_queue, work_queue):
                         make_quad_png(
                             target_quad_path, quad_png_path,
                             xoff, yoff, win_xsize, win_ysize)
+                        LOGGER.debug(
+                            'sending this to work queue: %s', quad_png_path)
                         work_queue.put(
                             (quad_png_path, xoff, yoff, quad_info.copy()))
                     except Exception:
