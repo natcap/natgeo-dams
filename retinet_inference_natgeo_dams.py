@@ -799,11 +799,11 @@ def main():
             WHERE country_list NOT LIKE "%ZAF%" AND processed=0
             ''', WORK_DATABASE_PATH, argument_list=[], fetch='all'))
 
-    quad_queue = multiprocessing.Queue(10)
+    quad_queue = multiprocessing.Queue(500)
     grid_done_queue = multiprocessing.Queue()
-    work_queue = multiprocessing.Queue(10)
-    inference_queue = multiprocessing.Queue(10)
-    postprocessing_queue = multiprocessing.Queue(10)
+    work_queue = multiprocessing.Queue(500)
+    inference_queue = multiprocessing.Queue(500)
+    postprocessing_queue = multiprocessing.Queue(500)
 
     grid_done_worker_thread = threading.Thread(
         target=grid_done_worker,
