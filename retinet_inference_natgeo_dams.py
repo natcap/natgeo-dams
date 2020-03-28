@@ -56,6 +56,10 @@ MOSAIC_ID = '4ce5863a-fb3f-4cad-a899-b8c053af1858'
 REQUEST_TIMEOUT = 1.5
 TRAINING_IMAGE_DIMS = (419, 419)
 
+_WGS84_SRS = osr.SpatialReference()
+_WGS84_SRS.ImportFromEPSG(4326)
+WGS84_WKT = _WGS84_SRS.ExportToWkt()
+
 
 def compute_resize_scale(image_shape, min_side=800, max_side=1333):
     """ Compute an image scale size to constrained to min_side/max_side.
@@ -353,7 +357,6 @@ def copy_from_gs(gs_uri, target_path):
     except Exception:
         pass
     subprocess.run(
-        #'/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
         'gsutil cp %s %s' %
         (gs_uri, target_path), shell=True)
 
@@ -396,19 +399,39 @@ def fetch_quad(
         quad_uri = (
             'gs://natgeo-dams-data/known-dam-quads/%s' %
             os.path.basename(target_quad_path))
-        subprocess.run(
-            './google-cloud-sdk/bin/gsutil cp %s %s' % (
-                target_quad_path, quad_uri),
-            shell=True, check=True)
-        os.remove(target_quad_path)
-        insert_quad_url_into = (
-            "INSERT INTO "
-            "quad_id_to_uri (quad_id, quad_uri) "
-            "VALUES (?, ?);")
-        _execute_sqlite(
-            insert_quad_url_into, quad_database_path,
-            mode='modify', execute='execute',
-            argument_list=[quad_id, quad_uri])
+
+        local_quad_info = pygeoprocessing.get_raster_info(target_quad_path)
+
+        lng_lat_bb = pygeoprocessing.transform_bounding_box(
+            local_quad_info['bounding_box'],
+            local_quad_info['projection'],
+            WGS84_WKT)
+
+        sqlite_update_variables = []
+        sqlite_update_variables.append(quad_id)
+        sqlite_update_variables.extend(lng_lat_bb)
+        sqlite_update_variables.append(  # file size in bytes
+            pathlib.Path(target_quad_path).stat().st_size)
+        sqlite_update_variables.append(quad_uri)
+
+        try:
+            subprocess.run(
+                'gsutil cp %s %s' % (
+                    target_quad_path, quad_uri),
+                shell=True, check=True)
+            _execute_sqlite(
+                '''
+                INSERT OR REPLACE INTO quad_cache_table
+                    (quad_id, long_min, lat_min, long_max, lat_max, file_size,
+                     gs_uri)
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+                ''', quad_database_path,
+                mode='modify', execute='execute',
+                argument_list=sqlite_update_variables)
+
+        except subprocess.CalledProcessError:
+            LOGGER.warning('file might already exist at %s' % quad_uri)
+
         return True
     except Exception:
         LOGGER.exception('error on quad %s' % quad_id)
