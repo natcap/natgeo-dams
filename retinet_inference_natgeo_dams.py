@@ -3,6 +3,7 @@ Adapted from: https://github.com/fizyr/keras-retinanet
 """
 
 import argparse
+import collections
 import logging
 import os
 import multiprocessing
@@ -478,14 +479,45 @@ def make_quad_png(
         raise
 
 
-def process_quad_worker(planet_api_key, quad_queue, work_queue):
+def grid_done_worker(work_database_path, grid_done_queue):
+    """Monitor if a grid is done and update if so."""
+    grid_status = collections.defaultdict(int)
     try:
         while True:
-            quad_id = quad_queue.get()
-            if quad_id == 'STOP':
+            payload = grid_done_queue.get()
+            if payload == 'STOP':
+                break
+            grid_id, count = payload
+            if count > 0:
+                grid_status[grid_id] += count
+            else:
+                grid_status[grid_id] -= count
+                if grid_status[grid_id] == 0:
+                    del grid_status[grid_id]
+                    ### update database
+                    _execute_sqlite(
+                        '''
+                        UPDATE work_status
+                        SET processed=1
+                        WHERE grid_id=?;
+                        ''', work_database_path,
+                        mode='modify', execute='execute',
+                        argument_list=[grid_id])
+    except Exception:
+        LOGGER.exception('error occured')
+        raise
+
+
+def process_quad_worker(
+        planet_api_key, quad_queue, work_queue, grid_done_queue):
+    try:
+        while True:
+            payload = quad_queue.get()
+            if payload == 'STOP':
                 quad_queue.put('STOP')
                 break
 
+            grid_id, quad_id = payload
             LOGGER.debug('attempting to process grid %s', quad_id)
             gs_uri = _execute_sqlite(
                 '''
@@ -525,13 +557,15 @@ def process_quad_worker(planet_api_key, quad_queue, work_queue):
                             LOGGER.debug(
                                 'sending this to work queue: %s', quad_png_path)
                             work_queue.put(
-                                (quad_png_path, xoff, yoff, quad_info.copy()))
+                                (grid_id, quad_png_path, xoff, yoff,
+                                 quad_info.copy()))
                         except Exception:
                             LOGGER.exception(
                                 'something bad happened, skipping %s'
                                 % quad_png_path)
             if os.path.exists(target_quad_path):
                 os.remove(target_quad_path)
+            grid_done_queue.put((grid_id, quad_slice_index))
     except Exception:
         LOGGER.exception('error occured')
         raise
@@ -545,7 +579,7 @@ def detect_dams_worker(work_queue, inference_queue):
             if payload == 'STOP':
                 payload.put('STOP')
                 break
-            image_path, xoff, yoff, quad_info = payload
+            grid_id, image_path, xoff, yoff, quad_info = payload
 
             raw_image = read_image_bgr(image_path)
             image = preprocess_image(raw_image)
@@ -553,7 +587,8 @@ def detect_dams_worker(work_queue, inference_queue):
             image = cv2.resize(image, None, fx=scale, fy=scale)
             if keras.backend.image_data_format() == 'channels_first':
                 image = image.transpose((2, 0, 1))
-            inference_queue.put((image, scale, image_path, xoff, yoff, quad_info))
+            inference_queue.put(
+                (grid_id, image, scale, image_path, xoff, yoff, quad_info))
     except Exception:
         LOGGER.exception('error occured')
         raise
@@ -567,20 +602,21 @@ def inference_worker(model, inference_queue, postprocessing_queue):
             if payload == 'STOP':
                 inference_queue.put('STOP')
                 break
-            image, scale, image_path, xoff, yoff, quad_info = payload
+            grid_id, image, scale, image_path, xoff, yoff, quad_info = payload
             boxes, scores, labels = model.predict_on_batch(
                 numpy.expand_dims(image, axis=0))[:3]
             # correct boxes for image scale
             boxes /= scale
             postprocessing_queue.put(
-                (boxes, scores, image_path, xoff, yoff, quad_info))
+                (grid_id, boxes, scores, image_path, xoff, yoff, quad_info))
     except Exception:
         LOGGER.exception('error occured')
         raise
 
 
 def postprocessing_worker(
-        postprocessing_queue, country_borders_vector_path, work_database_path):
+        postprocessing_queue, country_borders_vector_path, work_database_path,
+        grid_done_queue):
     """Get detected images, annotate them, and stick them in the db."""
     try:
         while True:
@@ -588,7 +624,7 @@ def postprocessing_worker(
             if payload == 'STOP':
                 postprocessing_queue.put('STOP')
                 break
-            boxes, scores, image_path, xoff, yoff, quad_info = payload
+            grid_id, boxes, scores, image_path, xoff, yoff, quad_info = payload
             non_max_supression_box_list = []
             # convert box to a list from a numpy array and score to a value from
             # a single element array
@@ -694,6 +730,7 @@ def postprocessing_worker(
                 """, work_database_path,
                 argument_list=lng_lat_score_list, mode='modify',
                 execute='many')
+            grid_done_queue.put((grid_id, -1))
     except Exception:
         LOGGER.exception('error occured')
         raise
@@ -753,9 +790,15 @@ def main():
             ''', WORK_DATABASE_PATH, argument_list=[], fetch='all'))
 
     quad_queue = multiprocessing.Queue(10)
+    grid_done_queue = multiprocessing.Queue()
     work_queue = multiprocessing.Queue(10)
     inference_queue = multiprocessing.Queue(10)
     postprocessing_queue = multiprocessing.Queue(10)
+
+    grid_done_worker_thread = threading.Thread(
+        target=grid_done_worker,
+        args=(WORK_DATABASE_PATH, grid_done_queue))
+    grid_done_worker_thread.start()
 
     # find the most recent mosaic we can use
     with open(PLANET_API_KEY_FILE, 'r') as planet_api_key_file:
@@ -764,7 +807,7 @@ def main():
     for _ in range(4):
         process_quad_worker_process = threading.Thread(
             target=process_quad_worker,
-            args=(planet_api_key, quad_queue, work_queue))
+            args=(planet_api_key, quad_queue, work_queue, grid_done_queue))
         process_quad_worker_process.start()
         process_quad_worker_list.append(process_quad_worker_process)
 
@@ -787,7 +830,7 @@ def main():
             target=postprocessing_worker,
             args=(
                 postprocessing_queue, country_borders_vector_path,
-                WORK_DATABASE_PATH))
+                WORK_DATABASE_PATH, grid_done_queue))
         postprocessing_worker_process.start()
         postprocessing_worker_list.append(postprocessing_worker_process)
 
@@ -797,7 +840,7 @@ def main():
         quad_id_list = get_quad_ids(
             session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
         for quad_id in quad_id_list:
-            quad_queue.put(quad_id)
+            quad_queue.put((grid_id, quad_id))
 
     LOGGER.debug('waiting for quad workers to stop')
     quad_queue.put('STOP')
@@ -817,6 +860,9 @@ def main():
     postprocessing_queue.put('STOP')
     for postprocessing_worker_process in postprocessing_worker_list:
         postprocessing_worker_process.join()
+
+    grid_done_queue.put('STOP')
+    grid_done_worker_thread.join()
 
     task_graph.join()
     task_graph.close()
