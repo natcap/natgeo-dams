@@ -757,7 +757,7 @@ def postprocessing_worker(
                     bounding_box[3]+yoff]
 
                 # convert to lat/lng
-                geotransform = quad_info['projection']
+                geotransform = quad_info['geotransform']
                 x_a, y_a = [int(x) for x in gdal.ApplyGeoTransform(
                     geotransform, global_bounding_box[0],
                     global_bounding_box[1])]
