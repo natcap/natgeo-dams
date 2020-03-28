@@ -537,7 +537,6 @@ def process_quad_worker(
             n_cols, n_rows = quad_info['raster_size']
             # extract the bounding boxes
             quad_slice_index = 0
-            grid_done_queue.put((grid_id, 1000))
             for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
                 win_xsize = TRAINING_IMAGE_DIMS[0]
                 if xoff + win_xsize >= n_cols:
@@ -568,7 +567,6 @@ def process_quad_worker(
             if os.path.exists(target_quad_path):
                 os.remove(target_quad_path)
             # this way it can't be done until all the work is sent
-            grid_done_queue.put((grid_id, -1000))
     except Exception:
         LOGGER.exception('error occured')
         raise
@@ -799,11 +797,11 @@ def main():
             WHERE country_list NOT LIKE "%ZAF%" AND processed=0
             ''', WORK_DATABASE_PATH, argument_list=[], fetch='all'))
 
-    quad_queue = multiprocessing.Queue(500)
+    quad_queue = multiprocessing.Queue(10)
     grid_done_queue = multiprocessing.Queue()
-    work_queue = multiprocessing.Queue(500)
-    inference_queue = multiprocessing.Queue(500)
-    postprocessing_queue = multiprocessing.Queue(500)
+    work_queue = multiprocessing.Queue(10)
+    inference_queue = multiprocessing.Queue(10)
+    postprocessing_queue = multiprocessing.Queue(10)
 
     grid_done_worker_thread = threading.Thread(
         target=grid_done_worker,
@@ -849,8 +847,10 @@ def main():
     for (grid_id, lng_min, lat_min, lng_max, lat_max) in work_grid_list:
         quad_id_list = get_quad_ids(
             session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
+        grid_done_queue.put((grid_id, 100000))
         for quad_id in quad_id_list:
             quad_queue.put((grid_id, quad_id))
+        grid_done_queue.put((grid_id, -100000))
 
     LOGGER.debug('waiting for quad workers to stop')
     quad_queue.put('STOP')
