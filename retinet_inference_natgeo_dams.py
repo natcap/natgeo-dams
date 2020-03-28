@@ -478,128 +478,128 @@ def make_quad_png(
         raise
 
 
-def process_quad(
-        model, quad_raster_path, quad_id, country_borders_vector_path,
-        work_database_path):
-    """Process quad into bounding box annotated chunks.
+# def process_quad(
+#         model, quad_raster_path, quad_id, country_borders_vector_path,
+#         work_database_path):
+#     """Process quad into bounding box annotated chunks.
 
-    Parameters:
-        model (keras): tensorflow model for bb detection
-        quad_uri (str): gs:// path to quad to download.
-        quad_id (str): ID in the database so work can be updated.
-        country_borders_vector_path (str): path to a country vector used for
-            determining bb intersections with countries.
-        work_database_path (str): path to the database that can be
-            updated to include the processing state complete and the
-            quad processed.
+#     Parameters:
+#         model (keras): tensorflow model for bb detection
+#         quad_uri (str): gs:// path to quad to download.
+#         quad_id (str): ID in the database so work can be updated.
+#         country_borders_vector_path (str): path to a country vector used for
+#             determining bb intersections with countries.
+#         work_database_path (str): path to the database that can be
+#             updated to include the processing state complete and the
+#             quad processed.
 
-    Returns:
-        True when complete.
+#     Returns:
+#         True when complete.
 
-    """
-    quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
-    n_cols, n_rows = quad_info['raster_size']
-    geotransform = quad_info['geotransform']
+#     """
+#     quad_info = pygeoprocessing.get_raster_info(quad_raster_path)
+#     n_cols, n_rows = quad_info['raster_size']
+#     geotransform = quad_info['geotransform']
 
-    # extract the bounding boxes
-    wgs84_srs = osr.SpatialReference()
-    wgs84_srs.ImportFromEPSG(4326)
-    wgs84_wkt = wgs84_srs.ExportToWkt()
-    quad_slice_index = 0
-    for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
-        win_xsize = TRAINING_IMAGE_DIMS[0]
-        if xoff + win_xsize >= n_cols:
-            xoff = n_cols-win_xsize-1
-        for yoff in range(0, n_rows, TRAINING_IMAGE_DIMS[1]):
-            win_ysize = TRAINING_IMAGE_DIMS[1]
-            if yoff + win_ysize >= n_rows:
-                yoff = n_rows-win_ysize-1
-                try:
-                    quad_png_path = os.path.join(
-                        CHURN_DIR, '%s_%d.png' % (quad_id, quad_slice_index))
-                    quad_slice_index += 1
-                    make_quad_png(
-                        quad_raster_path, quad_png_path,
-                        xoff, yoff, win_xsize, win_ysize)
+#     # extract the bounding boxes
+#     wgs84_srs = osr.SpatialReference()
+#     wgs84_srs.ImportFromEPSG(4326)
+#     wgs84_wkt = wgs84_srs.ExportToWkt()
+#     quad_slice_index = 0
+#     for xoff in range(0, n_cols, TRAINING_IMAGE_DIMS[0]):
+#         win_xsize = TRAINING_IMAGE_DIMS[0]
+#         if xoff + win_xsize >= n_cols:
+#             xoff = n_cols-win_xsize-1
+#         for yoff in range(0, n_rows, TRAINING_IMAGE_DIMS[1]):
+#             win_ysize = TRAINING_IMAGE_DIMS[1]
+#             if yoff + win_ysize >= n_rows:
+#                 yoff = n_rows-win_ysize-1
+#                 try:
+#                     quad_png_path = os.path.join(
+#                         CHURN_DIR, '%s_%d.png' % (quad_id, quad_slice_index))
+#                     quad_slice_index += 1
+#                     make_quad_png(
+#                         quad_raster_path, quad_png_path,
+#                         xoff, yoff, win_xsize, win_ysize)
 
-                    box_score_list = detect_dams(model, quad_png_path)
-                    if box_score_list is None:
-                        # no dams detected
-                        os.remove(quad_png_path)
-                        continue
+#                     box_score_list = detect_dams(model, quad_png_path)
+#                     if box_score_list is None:
+#                         # no dams detected
+#                         os.remove(quad_png_path)
+#                         continue
 
-                    # transform local bbs so they're relative to the png
-                    lng_lat_score_list = []
-                    for bounding_box, score in box_score_list:
-                        global_bounding_box = [
-                            bounding_box[0]+xoff,
-                            bounding_box[1]+yoff,
-                            bounding_box[2]+xoff,
-                            bounding_box[3]+yoff]
+#                     # transform local bbs so they're relative to the png
+#                     lng_lat_score_list = []
+#                     for bounding_box, score in box_score_list:
+#                         global_bounding_box = [
+#                             bounding_box[0]+xoff,
+#                             bounding_box[1]+yoff,
+#                             bounding_box[2]+xoff,
+#                             bounding_box[3]+yoff]
 
-                        # convert to lat/lng
-                        x_a, y_a = [int(x) for x in gdal.ApplyGeoTransform(
-                            geotransform, global_bounding_box[0],
-                            global_bounding_box[1])]
-                        x_b, y_b = [int(x) for x in gdal.ApplyGeoTransform(
-                            geotransform, global_bounding_box[2],
-                            global_bounding_box[3])]
-                        x_min, x_max = sorted([x_a, x_b])
-                        y_min, y_max = sorted([y_a, y_b])
-                        x_y_bounding_box = [
-                            x_min, y_min, x_max, y_max]
+#                         # convert to lat/lng
+#                         x_a, y_a = [int(x) for x in gdal.ApplyGeoTransform(
+#                             geotransform, global_bounding_box[0],
+#                             global_bounding_box[1])]
+#                         x_b, y_b = [int(x) for x in gdal.ApplyGeoTransform(
+#                             geotransform, global_bounding_box[2],
+#                             global_bounding_box[3])]
+#                         x_min, x_max = sorted([x_a, x_b])
+#                         y_min, y_max = sorted([y_a, y_b])
+#                         x_y_bounding_box = [
+#                             x_min, y_min, x_max, y_max]
 
-                        lng_lat_bounding_box = \
-                            pygeoprocessing.transform_bounding_box(
-                                x_y_bounding_box, quad_info['projection'],
-                                wgs84_wkt)
+#                         lng_lat_bounding_box = \
+#                             pygeoprocessing.transform_bounding_box(
+#                                 x_y_bounding_box, quad_info['projection'],
+#                                 wgs84_wkt)
 
-                        # get country intersection list
-                        shapely_box = shapely.geometry.box(
-                            *lng_lat_bounding_box)
+#                         # get country intersection list
+#                         shapely_box = shapely.geometry.box(
+#                             *lng_lat_bounding_box)
 
-                        country_intersection_list = \
-                            get_country_intersection_list(
-                                shapely_box,
-                                country_borders_vector_path)
+#                         country_intersection_list = \
+#                             get_country_intersection_list(
+#                                 shapely_box,
+#                                 country_borders_vector_path)
 
-                        lng_lat_score_list.append((
-                            lng_lat_bounding_box + [
-                                float(score),
-                                ','.join(country_intersection_list),
-                                quad_png_path]))
+#                         lng_lat_score_list.append((
+#                             lng_lat_bounding_box + [
+#                                 float(score),
+#                                 ','.join(country_intersection_list),
+#                                 quad_png_path]))
 
-                    # upload .pngs to bucket
-                    try:
-                        quad_uri = (
-                            'gs://natgeo-dams-data/detected_dam_data/'
-                            'annotated_imagery/%s' % os.path.basename(
-                                quad_png_path))
-                        subprocess.run(
-                            'gsutil mv %s %s'
-                            % (quad_png_path, quad_uri), shell=True,
-                            check=True)
-                    except subprocess.CalledProcessError:
-                        LOGGER.warning(
-                            'file might already exist -- not uploading')
-                        if os.path.exists(quad_png_path):
-                            os.remove(quad_png_path)
+#                     # upload .pngs to bucket
+#                     try:
+#                         quad_uri = (
+#                             'gs://natgeo-dams-data/detected_dam_data/'
+#                             'annotated_imagery/%s' % os.path.basename(
+#                                 quad_png_path))
+#                         subprocess.run(
+#                             'gsutil mv %s %s'
+#                             % (quad_png_path, quad_uri), shell=True,
+#                             check=True)
+#                     except subprocess.CalledProcessError:
+#                         LOGGER.warning(
+#                             'file might already exist -- not uploading')
+#                         if os.path.exists(quad_png_path):
+#                             os.remove(quad_png_path)
 
-                    LOGGER.debug('******* inserting the following into the table: %s', str(lng_lat_score_list))
-                    _execute_sqlite(
-                        """
-                        INSERT INTO
-                        detected_dams
-                            (lng_min, lat_min, lng_max, lat_max, probability,
-                             country_list, image_uri)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, work_database_path,
-                        argument_list=lng_lat_score_list, mode='modify',
-                        execute='many')
+#                     LOGGER.debug('******* inserting the following into the table: %s', str(lng_lat_score_list))
+#                     _execute_sqlite(
+#                         """
+#                         INSERT INTO
+#                         detected_dams
+#                             (lng_min, lat_min, lng_max, lat_max, probability,
+#                              country_list, image_uri)
+#                         VALUES (?, ?, ?, ?, ?, ?, ?)
+#                         """, work_database_path,
+#                         argument_list=lng_lat_score_list, mode='modify',
+#                         execute='many')
 
-                except Exception:
-                    LOGGER.exception(
-                        'something bad happened, skipping %s' % quad_png_path)
+#                 except Exception:
+#                     LOGGER.exception(
+#                         'something bad happened, skipping %s' % quad_png_path)
 
 
 def process_quad_worker(planet_api_key, quad_queue, work_queue):
@@ -717,7 +717,6 @@ def postprocessing_worker(
             if keep:
                 non_max_supression_box_list.append((box, score))
 
-        # no dams detected, just skip
         if non_max_supression_box_list:
             LOGGER.debug('found %d dams', len(non_max_supression_box_list))
             raw_image = read_image_bgr(image_path)
@@ -728,8 +727,7 @@ def postprocessing_worker(
                 draw_caption(raw_image, detected_box.bounds, str(score))
 
             cv2.imwrite(image_path, raw_image)
-
-        if non_max_supression_box_list is None:
+        else:
             # no dams detected
             os.remove(image_path)
             continue
