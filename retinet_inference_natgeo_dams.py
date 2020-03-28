@@ -19,7 +19,6 @@ from keras_retinanet.utils.keras_version import check_keras_version
 from keras_retinanet.utils.tf_version import check_tf_version
 from osgeo import gdal
 from osgeo import osr
-from osgeo import ogr
 import cv2
 import ecoshard
 import keras
@@ -375,30 +374,15 @@ def get_quad_ids(session, mosaic_id, min_x, min_y, max_x, max_y):
     mosaics_json = mosaics_response.json()
     LOGGER.debug('quad response %s: %s', mosaics_response, mosaics_json)
     quad_id_list = []
-    gpkg_driver = ogr.GetDriverByName('GPKG')
-    gpgk_path = '%.2f_%.2f_%.2f_%.2f.gpkg' % (min_x, min_y, max_x, max_y)
-    vector = gpkg_driver.CreateDataSource(gpgk_path)
-    wgs84_srs = osr.SpatialReference()
-    wgs84_srs.ImportFromEPSG(4326)
-    layer = vector.CreateLayer('bbetst', wgs84_srs, geom_type=ogr.wkbPolygon)
-
-    layer.StartTransaction()
     while True:
         quad_id_list.extend(
             [item['id'] for item in mosaics_json['items']])
-
-        for item in mosaics_json['items']:
-            box = shapely.geometry.box(*item['bbox'])
-            feature = ogr.Feature(layer.GetLayerDefn())
-            feature.SetGeometry(ogr.CreateGeometryFromWkb(box.wkb))
-            layer.CreateFeature(feature)
         if '_next' in mosaics_json['_links']:
             LOGGER.debug('_next in %s')
             mosaics_json = session.get(
                 mosaics_json['_links']['_next'], timeout=5.0).json()
         else:
             break
-    layer.CommitTransaction()
     return quad_id_list
 
 
@@ -562,25 +546,25 @@ def process_quad_worker(
                     win_ysize = TRAINING_IMAGE_DIMS[1]
                     if yoff + win_ysize >= n_rows:
                         yoff = n_rows-win_ysize-1
-                        try:
-                            quad_png_path = os.path.join(
-                                CHURN_DIR, '%s_%d.png' % (
-                                    quad_id, quad_slice_index))
-                            quad_slice_index += 1
-                            make_quad_png(
-                                target_quad_path, quad_png_path,
-                                xoff, yoff, win_xsize, win_ysize)
-                            LOGGER.debug(
-                                'sending this to work queue: %s',
-                                quad_png_path)
-                            work_queue.put(
-                                (grid_id, quad_png_path, xoff, yoff,
-                                 quad_info.copy()))
-                            grid_done_queue.put((grid_id, 1))
-                        except Exception:
-                            LOGGER.exception(
-                                'something bad happened, skipping %s'
-                                % quad_png_path)
+                    try:
+                        quad_png_path = os.path.join(
+                            CHURN_DIR, '%s_%d.png' % (
+                                quad_id, quad_slice_index))
+                        quad_slice_index += 1
+                        make_quad_png(
+                            target_quad_path, quad_png_path,
+                            xoff, yoff, win_xsize, win_ysize)
+                        LOGGER.debug(
+                            'sending this to work queue: %s',
+                            quad_png_path)
+                        work_queue.put(
+                            (grid_id, quad_png_path, xoff, yoff,
+                             quad_info.copy()))
+                        grid_done_queue.put((grid_id, 1))
+                    except Exception:
+                        LOGGER.exception(
+                            'something bad happened, skipping %s'
+                            % quad_png_path)
             if os.path.exists(target_quad_path):
                 os.remove(target_quad_path)
             # this way it can't be done until all the work is sent
