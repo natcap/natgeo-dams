@@ -1,17 +1,12 @@
-# natcap/microsoft-docker-api:0.0.1
+# 1.0-natgeo-dams:1
+# this is how you build it docker build dockerfile-dir -f dockerfile-dir\docker-microsoft-api -t 1.0-natgeo-dams:1
+# this is how you run it
 # This is how you run it:
 # docker build dockerfile-dir -f dockerfile-dir/docker-cpu -t natcap/microsoft-docker-api:0.0.1 && docker run -it --rm -v `pwd`:/usr/local/natgeo_dams natcap/microsoft-docker-api:0.0.1 python "./training_set_generator_retinet.py"
 
-FROM tensorflow/tensorflow:2.1.0-cpu-py3
+FROM tensorflow/tensorflow:2.1.0-py3
 
 SHELL ["/bin/bash", "-c"]
-
-WORKDIR /usr/local/gcloud-sdk
-RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-284.0.0-linux-x86_64.tar.gz?hl=id | tar -xvzf -
-RUN ./google-cloud-sdk/install.sh
-RUN source /usr/local/gcloud-sdk/google-cloud-sdk/completion.bash.inc
-RUN source /usr/local/gcloud-sdk/google-cloud-sdk/path.bash.inc
-RUN echo "export PATH=$PATH:/usr/local/gcloud-sdk/google-cloud-sdk/bin" >> /root/.bashrc
 
 COPY microsoft_api_docker.py /usr/local/natgeo_dams/microsoft_api_docker.py
 
@@ -59,3 +54,5 @@ RUN pip install git+https://github.com/natcap/pygeoprocessing.git@release/2.0
 RUN pip install git+https://github.com/richpsharp/ecoshard.git@master
 
 WORKDIR /usr/local/natgeo_dams
+
+ENTRYPOINT python microsoft_api_docker.py
