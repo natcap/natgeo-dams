@@ -13,6 +13,7 @@ import shapely.geometry
 import shapely.ops
 import shapely.prepared
 import shapely.wkb
+import sys
 import taskgraph
 
 WORKSPACE_DIR = 'planet_cell_to_grid_cache_workspace'
@@ -34,7 +35,7 @@ logging.basicConfig(
     format=(
         '%(asctime)s (%(relativeCreated)d) %(processName)s %(levelname)s '
         '%(name)s [%(funcName)s:%(lineno)d] %(message)s'),
-    filename='quad_cache_log.txt')
+    stream=sys.stdout)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -272,24 +273,20 @@ def main():
                 # query planet API for these bounding boxes
                 quad_id_list = get_quad_ids(
                     session, MOSAIC_ID, lng_min, lat_max-1, lng_min+1, lat_max)
-                LOGGER.debug(quad_id_list)
-            #   TODO: insert into DB
-
-            """
-            CREATE TABLE grid_id_to_quad_id (
-                grid_id INTEGER NOT NULL PRIMARY KEY,
-                quad_id_list TEXT NOT NULL,
-                country_iso3_list TEXT NOT NULL,
-                lng_min REAL NOT NULL,
-                lat_min REAL NOT NULL,
-                lng_max REAL NOT NULL,
-                lat_max REAL NOT NULL
-                );
-            """
-
-            grid_insert_args.append((
-                grid_id, lng_min, lat_max-1, lng_min+1, lat_max,
-                ','.join(intersecting_country_list), 0))
+                # insert into DB
+                _execute_sqlite(
+                    '''
+                    INSERT INTO grid_id_to_quad_id
+                        (grid_id, quad_id_list, country_iso3_list,
+                         lng_min, lat_min, lng_max, lat_max)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''',
+                    argument_list=[
+                        grid_id,
+                        ','.join(quad_id_list),
+                        ','.join(intersecting_country_list),
+                        lng_min, lat_max-1, lng_min+1, lat_max])
+                return
             grid_id += 1
 
 
