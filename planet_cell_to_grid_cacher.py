@@ -230,6 +230,7 @@ def main():
     task_graph.add_task(
         func=create_status_database,
         args=(DATABASE_PATH,),
+        hash_target_files=False,
         target_path_list=[DATABASE_PATH],
         task_name='create database')
 
@@ -255,10 +256,8 @@ def main():
             intersecting_country_list = \
                 get_country_intersection_list(
                     grid_box, country_borders_vector_path)
-            if not intersecting_country_list or \
-                    ISO_CODES_TO_SKIP in intersecting_country_list:
+            if not intersecting_country_list:
                 continue
-
             grid_exists = _execute_sqlite(
                 """
                 SELECT count(*)
@@ -289,7 +288,6 @@ def main():
                     ''', DATABASE_PATH,
                     argument_list=argument_list, mode='modify')
                 LOGGER.debug('inserted!')
-                return
             grid_id += 1
 
 
