@@ -274,18 +274,21 @@ def main():
                 quad_id_list = get_quad_ids(
                     session, MOSAIC_ID, lng_min, lat_max-1, lng_min+1, lat_max)
                 # insert into DB
+                argument_list = [
+                    grid_id,
+                    ','.join(quad_id_list),
+                    ','.join(intersecting_country_list),
+                    lng_min, lat_max-1, lng_min+1, lat_max]
+                LOGGER.debug('insert into database: %s', argument_list)
                 _execute_sqlite(
                     '''
                     INSERT INTO grid_id_to_quad_id
                         (grid_id, quad_id_list, country_iso3_list,
                          lng_min, lat_min, lng_max, lat_max)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''',
-                    argument_list=[
-                        grid_id,
-                        ','.join(quad_id_list),
-                        ','.join(intersecting_country_list),
-                        lng_min, lat_max-1, lng_min+1, lat_max])
+                    VALUES (?, ?, ?, ?, ?, ?, ?);
+                    ''', DATABASE_PATH,
+                    argument_list=argument_list, mode='modify')
+                LOGGER.debug('inserted!')
                 return
             grid_id += 1
 
