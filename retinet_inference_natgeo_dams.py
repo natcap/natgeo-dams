@@ -848,6 +848,7 @@ def main():
 
     session = requests.Session()
     session.auth = (planet_api_key, '')
+    LOGGER.debug(work_grid_list[0])
     for (grid_id, lng_min, lat_min, lng_max, lat_max) in work_grid_list:
         quad_id_list = get_quad_ids(
             session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
