@@ -791,6 +791,9 @@ def main():
         WHERE country_list LIKE "%ZAF%" AND processed=0
         ''', WORK_DATABASE_PATH, argument_list=[], fetch='all')
 
+    if work_grid_list is None:
+        work_grid_list = []
+
     work_grid_list.append(
         _execute_sqlite('''
             SELECT grid_id, lng_min, lat_min, lng_max, lat_max
