@@ -22,6 +22,17 @@ logging.basicConfig(
         '%(name)s [%(funcName)s:%(lineno)d] %(message)s'))
 LOGGER = logging.getLogger(__name__)
 
+COUNTRY_PRIORITIES = [
+    'ZAF',
+    'MMR',
+    'COL',
+    'BRA',
+    'CHN',
+    'CRI',
+    'ZMB',
+    'GHA',
+    'PER']
+
 
 def _execute_sqlite(
         sqlite_command, database_path, argument_list=None,
@@ -91,7 +102,35 @@ def _execute_sqlite(
         raise
 
 
-if __name__ == '__main__':
+def main():
+    for country_iso in COUNTRY_PRIORITIES + ['']:
+        LOGGER.debug(country_iso)
+        bounding_box_list = _execute_sqlite(
+            '''
+            SELECT lng_min, lat_min, lng_max, lat_max
+            FROM detected_dams
+            WHERE country_list LIKE ?
+            GROUP BY lng_min, lat_min, lng_max, lat_max
+            ''', NATGEO_DETECTED_DAMS_DB_PATH, fetch='all',
+            argument_list=['%%%s%%' % country_iso])
+        gpkg_driver = ogr.GetDriverByName('GPKG')
+        vector = gpkg_driver.CreateDataSource('%s_found.gpkg' % country_iso)
+        wgs84_srs = osr.SpatialReference()
+        wgs84_srs.ImportFromEPSG(4326)
+        layer = vector.CreateLayer(
+            '%s_found' % country_iso, wgs84_srs, geom_type=ogr.wkbPolygon)
+
+        layer.StartTransaction()
+        for index, (lng_min, lat_min, lng_max, lat_max) in enumerate(
+                bounding_box_list):
+            box = shapely.geometry.box(lng_min, lat_min, lng_max, lat_max)
+            ogr_box = ogr.CreateGeometryFromWkb(box.wkb)
+            feature = ogr.Feature(layer.GetLayerDefn())
+            feature.SetGeometry(ogr.CreateGeometryFromWkb(box.wkb))
+            layer.CreateFeature(feature)
+        layer.CommitTransaction()
+
+    return
     bounding_box_list = _execute_sqlite(
         '''
         SELECT lng_min, lat_min, lng_max, lat_max
@@ -130,3 +169,7 @@ if __name__ == '__main__':
         if list(zaf_index.intersection(known_dam_box.bounds)):
             found_dams_count += 1
     LOGGER.debug('%d: %d', known_dams_count, found_dams_count)
+
+
+if __name__ == '__main__':
+    main()
