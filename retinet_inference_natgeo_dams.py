@@ -20,13 +20,11 @@ from keras_retinanet.utils.tf_version import check_tf_version
 from osgeo import gdal
 from osgeo import osr
 import cv2
-import ecoshard
 import keras
 import PIL
 import png
 import pygeoprocessing
 import numpy
-import requests
 import retrying
 import rtree
 import shapely.geometry
@@ -41,6 +39,10 @@ CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
 COUNTRY_BORDER_VECTOR_URI = (
     'gs://natgeo-dams-data/ecoshards/'
     'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg')
+PLANET_GRID_ID_TO_QUAD_URI = (
+    'gs://natgeo-dams-data/databases/'
+    'planet_cell_to_grid_md5_a6538da277880f8dda550de531ce4df3.db')
+
 QUAD_CACHE_DB_PATH = os.path.join(
     'planet_quad_cache_workspace', 'quad_uri.db')
 WORK_DATABASE_PATH = os.path.join(CHURN_DIR, 'natgeo_dams_database.db')
@@ -54,8 +56,6 @@ LOGGER = logging.getLogger(__name__)
 logging.getLogger('taskgraph').setLevel(logging.INFO)
 
 ISO_CODES_TO_SKIP = ['ATA']
-PLANET_API_KEY_FILE = 'planet_api_key.txt'
-MOSAIC_ID = '4ce5863a-fb3f-4cad-a899-b8c053af1858'
 REQUEST_TIMEOUT = 1.5
 TRAINING_IMAGE_DIMS = (419, 419)
 
@@ -333,8 +333,6 @@ def create_work_database(target_work_database_path, country_vector_path):
             intersecting_country_list = \
                 get_country_intersection_list(
                     grid_box, country_vector_path)
-            if ISO_CODES_TO_SKIP in intersecting_country_list:
-                continue
             if intersecting_country_list:
                 grid_insert_args.append((
                     grid_id, lng_min, lat_max-1, lng_min+1, lat_max,
@@ -352,60 +350,29 @@ def create_work_database(target_work_database_path, country_vector_path):
         argument_list=grid_insert_args, mode='modify', execute='many')
 
 
+@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def copy_from_gs(gs_uri, target_path):
     """Copy a GS objec to `target_path."""
-    dirpath = os.path.dirname(target_path)
     try:
-        os.makedirs(dirpath)
+        dirpath = os.path.dirname(target_path)
+        try:
+            os.makedirs(dirpath)
+        except Exception:
+            pass
+        subprocess.run(
+            'gsutil cp %s %s' %
+            (gs_uri, target_path), shell=True)
     except Exception:
-        pass
-    subprocess.run(
-        'gsutil cp %s %s' %
-        (gs_uri, target_path), shell=True)
+        LOGGER.exception('exception on copy_from_gs')
+        raise
 
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
-def get_quad_ids(session, mosaic_id, min_x, min_y, max_x, max_y):
-    bb_query_url = (
-        'https://api.planet.com/basemaps/v1/mosaics/'
-        '%s/quads?bbox=%f,%f,%f,%f' % (
-            mosaic_id, min_x, min_y, max_x, max_y))
-    mosaics_response = session.get(bb_query_url, timeout=5.0)
-    mosaics_json = mosaics_response.json()
-    LOGGER.debug('quad response %s: %s', mosaics_response, mosaics_json)
-    quad_id_list = []
-    while True:
-        quad_id_list.extend(
-            [item['id'] for item in mosaics_json['items']])
-        if '_next' in mosaics_json['_links']:
-            LOGGER.debug('_next in %s')
-            mosaics_json = session.get(
-                mosaics_json['_links']['_next'], timeout=5.0).json()
-        else:
-            break
-    return quad_id_list
-
-
-@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
-def fetch_quad(
-        planet_api_key, mosaic_id, quad_id, target_quad_path,
-        quad_database_path):
+def fetch_quad(quad_id, target_quad_path):
     try:
-        session = requests.Session()
-        session.auth = (planet_api_key, '')
-        LOGGER.debug('fetch get quad')
-        get_quad_url = (
-            f'https://api.planet.com/basemaps/v1/mosaics/'
-            f'{mosaic_id}/quads/{quad_id}')
-        quads_json = session.get(get_quad_url, timeout=REQUEST_TIMEOUT)
-        download_url = (quads_json.json())['_links']['download']
-        ecoshard.download_url(download_url, target_quad_path)
-        quad_uri = (
-            'gs://natgeo-dams-data/known-dam-quads/%s' %
-            os.path.basename(target_quad_path))
-
+        quad_uri = ('gs://natgeo-dams-data/known-dam-quads/%s.tif' % quad_id)
+        copy_from_gs(quad_uri, target_quad_path)
         local_quad_info = pygeoprocessing.get_raster_info(target_quad_path)
-
         lng_lat_bb = pygeoprocessing.transform_bounding_box(
             local_quad_info['bounding_box'],
             local_quad_info['projection'],
@@ -417,24 +384,6 @@ def fetch_quad(
         sqlite_update_variables.append(  # file size in bytes
             pathlib.Path(target_quad_path).stat().st_size)
         sqlite_update_variables.append(quad_uri)
-
-        try:
-            subprocess.run(
-                'gsutil cp %s %s' % (
-                    target_quad_path, quad_uri),
-                shell=True, check=True)
-            _execute_sqlite(
-                '''
-                INSERT OR REPLACE INTO quad_cache_table
-                    (quad_id, long_min, lat_min, long_max, lat_max, file_size,
-                     gs_uri)
-                VALUES (?, ?, ?, ?, ?, ?, ?);
-                ''', quad_database_path,
-                mode='modify', execute='execute',
-                argument_list=sqlite_update_variables)
-
-        except subprocess.CalledProcessError:
-            LOGGER.warning('file might already exist at %s' % quad_uri)
 
         return True
     except Exception:
@@ -508,8 +457,7 @@ def grid_done_worker(work_database_path, grid_done_queue):
         raise
 
 
-def process_quad_worker(
-        planet_api_key, quad_queue, work_queue, grid_done_queue):
+def process_quad_worker(quad_queue, work_queue, grid_done_queue):
     try:
         while True:
             payload = quad_queue.get()
@@ -518,21 +466,12 @@ def process_quad_worker(
                 break
 
             grid_id, quad_id = payload
-            LOGGER.debug('attempting to process grid %s', quad_id)
-            gs_uri = _execute_sqlite(
-                '''
-                SELECT gs_uri
-                FROM quad_cache_table
-                WHERE quad_id=?;
-                ''', QUAD_CACHE_DB_PATH, argument_list=[quad_id], fetch='one')
-            LOGGER.debug('%s: %s', quad_id, gs_uri)
+            LOGGER.debug('attempting to process quad %s', quad_id)
+
+            # copy quad locally
+            quad_uri = 'gs://natgeo-dams-data/known-dam-quads/%s.tif' % quad_id
             target_quad_path = os.path.join(CHURN_DIR, '%s.tif' % quad_id)
-            if gs_uri is None:
-                fetch_quad(
-                    planet_api_key, MOSAIC_ID, quad_id, target_quad_path,
-                    QUAD_CACHE_DB_PATH)
-            else:
-                copy_from_gs(gs_uri[0], target_quad_path)
+            copy_from_gs(quad_uri, target_quad_path)
 
             quad_info = pygeoprocessing.get_raster_info(target_quad_path)
             n_cols, n_rows = quad_info['raster_size']
@@ -565,9 +504,10 @@ def process_quad_worker(
                         LOGGER.exception(
                             'something bad happened, skipping %s'
                             % quad_png_path)
+
             if os.path.exists(target_quad_path):
                 os.remove(target_quad_path)
-            # this way it can't be done until all the work is sent
+
     except Exception:
         LOGGER.exception('error occured')
         raise
@@ -629,8 +569,8 @@ def postprocessing_worker(
                 break
             grid_id, boxes, scores, image_path, xoff, yoff, quad_info = payload
             non_max_supression_box_list = []
-            # convert box to a list from a numpy array and score to a value from
-            # a single element array
+            # convert box to a list from a numpy array and score to a value
+            # from a single element array
             box_score_tuple_list = [
                 (list(box), score) for box, score in zip(boxes[0], scores[0])
                 if score > 0.3]
@@ -728,7 +668,6 @@ def postprocessing_worker(
                 if os.path.exists(image_path):
                     os.remove(image_path)
 
-            LOGGER.debug('******* inserting the following into the table: %s', str(lng_lat_score_list))
             _execute_sqlite(
                 """
                 INSERT INTO
@@ -777,6 +716,16 @@ def main():
         task_name='download country borders vector',
         target_path_list=[country_borders_vector_path])
 
+    planet_grid_id_to_quad_path = os.path.join(
+        ECOSHARD_DIR, os.path.basename(PLANET_GRID_ID_TO_QUAD_URI))
+    country_borders_dl_task = task_graph.add_task(
+        func=copy_from_gs,
+        args=(
+            PLANET_GRID_ID_TO_QUAD_URI,
+            planet_grid_id_to_quad_path),
+        task_name='download planet grid to quad id db',
+        target_path_list=[planet_grid_id_to_quad_path])
+
     task_graph.add_task(
         func=create_work_database,
         args=(WORK_DATABASE_PATH, country_borders_vector_path),
@@ -809,19 +758,16 @@ def main():
         args=(WORK_DATABASE_PATH, grid_done_queue))
     grid_done_worker_thread.start()
 
-    # find the most recent mosaic we can use
-    with open(PLANET_API_KEY_FILE, 'r') as planet_api_key_file:
-        planet_api_key = planet_api_key_file.read().rstrip()
     process_quad_worker_list = []
-    for _ in range(5):
+    for _ in range(1):
         process_quad_worker_process = threading.Thread(
             target=process_quad_worker,
-            args=(planet_api_key, quad_queue, work_queue, grid_done_queue))
+            args=(quad_queue, work_queue, grid_done_queue))
         process_quad_worker_process.start()
         process_quad_worker_list.append(process_quad_worker_process)
 
     detect_dams_worker_list = []
-    for _ in range(5):
+    for _ in range(1):
         detect_dams_worker_process = threading.Thread(
             target=detect_dams_worker,
             args=(work_queue, inference_queue))
@@ -834,7 +780,7 @@ def main():
     inference_worker_thread.start()
 
     postprocessing_worker_list = []
-    for _ in range(5):
+    for _ in range(1):
         postprocessing_worker_process = threading.Thread(
             target=postprocessing_worker,
             args=(
@@ -843,12 +789,16 @@ def main():
         postprocessing_worker_process.start()
         postprocessing_worker_list.append(postprocessing_worker_process)
 
-    session = requests.Session()
-    session.auth = (planet_api_key, '')
     LOGGER.debug(work_grid_list[0])
     for (grid_id, lng_min, lat_min, lng_max, lat_max) in work_grid_list:
-        quad_id_list = get_quad_ids(
-            session, MOSAIC_ID, lng_min, lat_min, lng_max, lat_max)
+
+        quad_id_list = _execute_sqlite(
+            '''
+            SELECT quad_id_list
+            FROM grid_id_to_quad_id
+            WHERE grid_id=?
+            ''', planet_grid_id_to_quad_path, argument_list=[grid_id],
+            fetch='all').split(',')
         grid_done_queue.put((grid_id, 100000))
         for quad_id in quad_id_list:
             quad_queue.put((grid_id, quad_id))
