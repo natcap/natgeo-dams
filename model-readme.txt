@@ -22,4 +22,3 @@ Model: https://github.com/fizyr/keras-retinanet
 
 Data: natgeo-dams-data bucket
     * gs://natgeo-dams-data/training_data holds the training data annotation.csv, classes.csv and the directory structure relative to them
-* todo fill this out

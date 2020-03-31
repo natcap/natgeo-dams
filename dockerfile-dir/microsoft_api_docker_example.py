@@ -14,5 +14,6 @@ if __name__ == '__main__':
         args.url,
         data=open(args.image_path, 'rb').read(),
         headers={'Content-Type': 'image/png'})
-
-    print(result)
+    if result:
+        print('list of bounding boxes in pixel space and scores:')
+        print(result.json())
