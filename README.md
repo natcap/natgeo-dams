@@ -12,3 +12,7 @@
 
 4) run inference on Earth:
     * ``python retinet_inference_natgeo_dams.py --gpu 0 ./natgeo_dams_model_resnet50_csv_64.h5``
+
+# training data
+
+Our training data are hosted on a publically readable Microsoft Azure bucket located at: https://natgeodamstrainingdata.blob.core.windows.net/training-data. **NOTE** this is a Azure storage link, not a web browser link and hence must be accessed with the Microsoft Storage Explorer or command line ``az`` tool.
