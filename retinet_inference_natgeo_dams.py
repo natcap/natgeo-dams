@@ -379,30 +379,6 @@ def copy_from_gs(gs_uri, target_path):
         raise
 
 
-@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
-def fetch_quad(quad_id, target_quad_path):
-    try:
-        quad_uri = ('gs://natgeo-dams-data/known-dam-quads/%s.tif' % quad_id)
-        copy_from_gs(quad_uri, target_quad_path)
-        local_quad_info = pygeoprocessing.get_raster_info(target_quad_path)
-        lng_lat_bb = pygeoprocessing.transform_bounding_box(
-            local_quad_info['bounding_box'],
-            local_quad_info['projection'],
-            WGS84_WKT)
-
-        sqlite_update_variables = []
-        sqlite_update_variables.append(quad_id)
-        sqlite_update_variables.extend(lng_lat_bb)
-        sqlite_update_variables.append(  # file size in bytes
-            pathlib.Path(target_quad_path).stat().st_size)
-        sqlite_update_variables.append(quad_uri)
-
-        return True
-    except Exception:
-        LOGGER.exception('error on quad %s' % quad_id)
-        raise
-
-
 def make_quad_png(
         quad_raster_path, quad_png_path, xoff, yoff, win_xsize, win_ysize):
     """Make a PNG out of a geotiff.
