@@ -141,8 +141,7 @@ def process_image():
                         break
             if keep:
                 non_max_supression_box_list.append((
-                    [float(x) for x in box],
-                    [float(x) for x in score]))
+                    [float(x) for x in box], float(score)))
 
         LOGGER.debug(non_max_supression_box_list)
         return flask.jsonify(non_max_supression_box_list)
