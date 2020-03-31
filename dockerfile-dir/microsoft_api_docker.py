@@ -162,7 +162,8 @@ if __name__ == '__main__':
     check_keras_version()
     check_tf_version()
 
-    model = models.load_model('resnet50_csv_67.h5', backbone_name='resnet50')
+    model = models.load_model(
+        'natgeo_dams_model_resnet50_csv_64.h5', backbone_name='resnet50')
 
     LOGGER.debug('start the APP')
     APP.run(

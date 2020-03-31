@@ -563,10 +563,8 @@ def inference_worker(model, inference_queue, postprocessing_queue):
                 inference_queue.put('STOP')
                 break
             grid_id, image, scale, image_path, xoff, yoff, quad_info = payload
-            print('****run inference on image %s' % str(image.shape))
             result = model.predict_on_batch(
                 numpy.expand_dims(image, axis=0))[:3]
-            print(str(result))
             # correct boxes for image scale
             boxes, scores, labels = result
             boxes /= scale
