@@ -3,7 +3,6 @@
 Platform: Google Cloud
 project natgeo-dams
 
-
 VM:
 * natgeo-dams-training-server: 1 GPU
     * nvidia-smi will tell you the GPU status
@@ -18,12 +17,9 @@ Model: https://github.com/fizyr/keras-retinanet
 
     * manually:  retinanet-train --gpu 0 --multiprocessing --workers 4 --batch-size 4 csv ./training_data/no_ZAF_annotations.csv ./training_data/classes.csv
 
-* To train:
-    * note multi gpu doesn't seem to work
-
 * To run detection:
     * git pull && python retinet_inference_natgeo_dams.py --gpu 0 ./natgeo_dams_model_resnet50_csv_64.h5
 
 Data: natgeo-dams-data bucket
-* gs://natgeo-dams-data/training_data holds the training data annotation.csv, classes.csv and the directory structure relative to them
+    * gs://natgeo-dams-data/training_data holds the training data annotation.csv, classes.csv and the directory structure relative to them
 * todo fill this out
