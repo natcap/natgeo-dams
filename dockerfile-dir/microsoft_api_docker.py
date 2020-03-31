@@ -104,7 +104,6 @@ def process_image():
         with open(image_path, 'wb') as png_file:
             png_file.write(payload)
         LOGGER.debug('payload written to: %s', image_path)
-
         LOGGER.debug('preprocess image')
         raw_image = read_image_bgr(image_path)
         image = preprocess_image(raw_image)
@@ -116,7 +115,7 @@ def process_image():
 
         LOGGER.debug('run inference on image %s', str(image.shape))
         result = model.predict_on_batch(
-            numpy.expand_dims(image, axis=0))[:3]
+            numpy.expand_dims(image, axis=0))
         # correct boxes for image scale
 
         LOGGER.debug('result: %s', str(result))
@@ -159,6 +158,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     LOGGER.debug('set up model')
+
+    check_keras_version()
+    check_tf_version()
+
     model = models.load_model('resnet50_csv_67.h5', backbone_name='resnet50')
 
     LOGGER.debug('start the APP')
