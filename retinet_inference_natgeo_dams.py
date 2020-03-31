@@ -41,7 +41,7 @@ COUNTRY_BORDER_VECTOR_URI = (
     'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg')
 PLANET_GRID_ID_TO_QUAD_URI = (
     'gs://natgeo-dams-data/databases/'
-    'planet_cell_to_grid_md5_a6538da277880f8dda550de531ce4df3.db')
+    'planet_cell_to_grid_md5_eb607fdb74a6278e9597fddeb59b58c1.db')
 
 QUAD_CACHE_DB_PATH = os.path.join(
     'planet_quad_cache_workspace', 'quad_uri.db')
@@ -360,7 +360,9 @@ def create_work_database(target_work_database_path, country_vector_path):
         argument_list=grid_insert_args, mode='modify', execute='many')
 
 
-@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
+@retrying.retry(
+    wait_exponential_multiplier=100, wait_exponential_max=1000,
+    stop_max_attempt_number=5)
 def copy_from_gs(gs_uri, target_path):
     """Copy a GS objec to `target_path."""
     try:
