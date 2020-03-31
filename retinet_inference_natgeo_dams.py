@@ -714,13 +714,14 @@ def main():
         task_name='download planet grid to quad id db',
         target_path_list=[planet_grid_id_to_quad_path])
 
-    task_graph.add_task(
-        func=create_work_database,
-        args=(WORK_DATABASE_PATH, country_borders_vector_path),
-        hash_target_files=False,
-        target_path_list=[country_borders_vector_path, WORK_DATABASE_PATH],
-        dependent_task_list=[country_borders_dl_task],
-        task_name='create status database')
+    if not os.path.exists(WORK_DATABASE_PATH):
+        task_graph.add_task(
+            func=create_work_database,
+            args=(WORK_DATABASE_PATH, country_borders_vector_path),
+            hash_target_files=False,
+            target_path_list=[country_borders_vector_path, WORK_DATABASE_PATH],
+            dependent_task_list=[country_borders_dl_task],
+            task_name='create status database')
 
     quad_queue = multiprocessing.Queue(10)
     grid_done_queue = multiprocessing.Queue()
