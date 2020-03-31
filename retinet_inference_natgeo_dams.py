@@ -55,7 +55,17 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 logging.getLogger('taskgraph').setLevel(logging.INFO)
 
-ISO_CODES_TO_SKIP = ['ATA']
+COUNTRY_PRIORITIES = [
+    'ZAF',
+    'MMR',
+    'COL',
+    'BRA',
+    'CHN',
+    'CRI',
+    'ZMB',
+    'GHA',
+    'PER']
+
 REQUEST_TIMEOUT = 1.5
 TRAINING_IMAGE_DIMS = (419, 419)
 
@@ -734,19 +744,6 @@ def main():
         dependent_task_list=[country_borders_dl_task],
         task_name='create status database')
 
-    work_grid_list = _execute_sqlite('''
-        SELECT grid_id, lng_min, lat_min, lng_max, lat_max
-        FROM work_status
-        WHERE country_list LIKE "%ZAF%" AND processed=0
-        ''', WORK_DATABASE_PATH, argument_list=[], fetch='all')
-
-    work_grid_list.extend(
-        _execute_sqlite('''
-            SELECT grid_id, lng_min, lat_min, lng_max, lat_max
-            FROM work_status
-            WHERE country_list NOT LIKE "%ZAF%" AND processed=0
-            ''', WORK_DATABASE_PATH, argument_list=[], fetch='all'))
-
     quad_queue = multiprocessing.Queue(10)
     grid_done_queue = multiprocessing.Queue()
     work_queue = multiprocessing.Queue(10)
@@ -789,20 +786,29 @@ def main():
         postprocessing_worker_process.start()
         postprocessing_worker_list.append(postprocessing_worker_process)
 
-    LOGGER.debug(work_grid_list[0])
-    for (grid_id, lng_min, lat_min, lng_max, lat_max) in work_grid_list:
-
-        quad_id_list = _execute_sqlite(
+    # iterate through country priorities and do '' -- all, last.
+    for country_iso3 in COUNTRY_PRIORITIES + ['']:
+        LOGGER.debug('***** Process country %s', country_iso3)
+        work_grid_list = _execute_sqlite(
             '''
-            SELECT quad_id_list
-            FROM grid_id_to_quad_id
-            WHERE grid_id=?
-            ''', planet_grid_id_to_quad_path, argument_list=[grid_id],
-            fetch='all').split(',')
-        grid_done_queue.put((grid_id, 100000))
-        for quad_id in quad_id_list:
-            quad_queue.put((grid_id, quad_id))
-        grid_done_queue.put((grid_id, -100000))
+            SELECT grid_id, lng_min, lat_min, lng_max, lat_max
+            FROM work_status
+            WHERE country_list LIKE ? AND processed=0
+            ''', WORK_DATABASE_PATH, argument_list=['%%%s%%' % country_iso3],
+            fetch='all')
+        for (grid_id, lng_min, lat_min, lng_max, lat_max) in work_grid_list:
+            quad_id_list = _execute_sqlite(
+                '''
+                SELECT quad_id_list
+                FROM grid_id_to_quad_id
+                WHERE grid_id=?
+                ''', planet_grid_id_to_quad_path, argument_list=[grid_id],
+                fetch='all').split(',')
+            # make the score really high
+            grid_done_queue.put((grid_id, 100000))
+            for quad_id in quad_id_list:
+                quad_queue.put((grid_id, quad_id))
+            grid_done_queue.put((grid_id, -100000))
 
     LOGGER.debug('waiting for quad workers to stop')
     quad_queue.put('STOP')
