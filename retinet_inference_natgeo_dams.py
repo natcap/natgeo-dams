@@ -362,9 +362,6 @@ def create_work_database(target_work_database_path, country_vector_path):
         argument_list=grid_insert_args, mode='modify', execute='many')
 
 
-@retrying.retry(
-    wait_exponential_multiplier=100, wait_exponential_max=1000,
-    stop_max_attempt_number=5)
 def copy_from_gs(gs_uri, target_path):
     """Copy a GS objec to `target_path."""
     try:
