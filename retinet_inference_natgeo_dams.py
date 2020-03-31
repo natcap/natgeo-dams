@@ -20,11 +20,13 @@ from keras_retinanet.utils.tf_version import check_tf_version
 from osgeo import gdal
 from osgeo import osr
 import cv2
+import ecoshard
 import keras
 import PIL
 import png
 import pygeoprocessing
 import numpy
+import requests
 import retrying
 import rtree
 import shapely.geometry
@@ -42,7 +44,7 @@ COUNTRY_BORDER_VECTOR_URI = (
 PLANET_GRID_ID_TO_QUAD_URI = (
     'gs://natgeo-dams-data/databases/'
     'planet_cell_to_grid_md5_eb607fdb74a6278e9597fddeb59b58c1.db')
-
+PLANET_API_KEY_FILE = 'planet_api_key.txt'
 QUAD_CACHE_DB_PATH = os.path.join(
     'planet_quad_cache_workspace', 'quad_uri.db')
 WORK_DATABASE_PATH = os.path.join(CHURN_DIR, 'natgeo_dams_database.db')
@@ -373,9 +375,38 @@ def copy_from_gs(gs_uri, target_path):
             pass
         subprocess.run(
             'gsutil cp %s %s' %
-            (gs_uri, target_path), shell=True)
+            (gs_uri, target_path), shell=True, check=True)
     except Exception:
         LOGGER.exception('exception on copy_from_gs')
+        raise
+
+
+@retrying.retry(
+    wait_exponential_multiplier=100, wait_exponential_max=2000,
+    stop_max_attempt_number=10)
+def fetch_quad(session, quad_id, quad_target_path):
+    """Attempt to copy, then fetch, then upload quad."""
+    try:
+        quad_uri = 'gs://natgeo-dams-data/known-dam-quads/%s.tif' % quad_id
+        try:
+            copy_from_gs(quad_uri, quad_target_path)
+        except Exception:
+            # Try to download it
+            get_quad_url = (
+                f'https://api.planet.com/basemaps/v1/mosaics/'
+                f'4ce5863a-fb3f-4cad-a899-b8c053af1858/quads/{quad_id}')
+            quads_json = session.get(get_quad_url, timeout=REQUEST_TIMEOUT)
+            download_url = (quads_json.json())['_links']['download']
+            ecoshard.download_url(download_url, quad_target_path)
+            try:
+                # Try to upload it
+                subprocess.run(
+                    'gsutil cp %s %s'
+                    % (quad_target_path, quad_uri), shell=True, check=True)
+            except subprocess.CalledProcessError:
+                LOGGER.warning('couldn\'t copy to bucket')
+    except Exception:
+        LOGGER.exception('error on quad %s' % quad_id)
         raise
 
 
@@ -445,8 +476,10 @@ def grid_done_worker(work_database_path, grid_done_queue):
         raise
 
 
-def process_quad_worker(quad_queue, work_queue, grid_done_queue):
+def process_quad_worker(planet_api_key, quad_queue, work_queue, grid_done_queue):
     try:
+        session = requests.Session()
+        session.auth = (planet_api_key, '')
         while True:
             payload = quad_queue.get()
             if payload == 'STOP':
@@ -457,9 +490,8 @@ def process_quad_worker(quad_queue, work_queue, grid_done_queue):
             LOGGER.debug('attempting to process quad %s', quad_id)
 
             # copy quad locally
-            quad_uri = 'gs://natgeo-dams-data/known-dam-quads/%s.tif' % quad_id
             target_quad_path = os.path.join(CHURN_DIR, '%s.tif' % quad_id)
-            copy_from_gs(quad_uri, target_quad_path)
+            fetch_quad(session, quad_id, target_quad_path)
 
             quad_info = pygeoprocessing.get_raster_info(target_quad_path)
             n_cols, n_rows = quad_info['raster_size']
@@ -723,6 +755,10 @@ def main():
             dependent_task_list=[country_borders_dl_task],
             task_name='create status database')
 
+    # find the most recent mosaic we can use
+    with open(PLANET_API_KEY_FILE, 'r') as planet_api_key_file:
+        planet_api_key = planet_api_key_file.read().rstrip()
+
     quad_queue = multiprocessing.Queue(10)
     grid_done_queue = multiprocessing.Queue()
     work_queue = multiprocessing.Queue(10)
@@ -738,7 +774,7 @@ def main():
     for _ in range(1):
         process_quad_worker_process = threading.Thread(
             target=process_quad_worker,
-            args=(quad_queue, work_queue, grid_done_queue))
+            args=(planet_api_key, quad_queue, work_queue, grid_done_queue))
         process_quad_worker_process.start()
         process_quad_worker_list.append(process_quad_worker_process)
 
