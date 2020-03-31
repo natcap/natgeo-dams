@@ -117,8 +117,7 @@ def process_image():
         result = model.predict_on_batch(
             numpy.expand_dims(image, axis=0))
         # correct boxes for image scale
-
-        LOGGER.debug('result: %s', str(result))
+        LOGGER.debug('inference complete')
         boxes, scores, labels = result
         boxes /= scale
 
@@ -141,10 +140,12 @@ def process_image():
                         keep = False
                         break
             if keep:
-                non_max_supression_box_list.append((box, score))
+                non_max_supression_box_list.append((
+                    [float(x) for x in box],
+                    [float(x) for x in score]))
 
         LOGGER.debug(non_max_supression_box_list)
-        return 'complete', 202
+        return flask.jsonify(non_max_supression_box_list)
     except Exception as e:
         LOGGER.exception('error on processing image')
         return str(e), 500
