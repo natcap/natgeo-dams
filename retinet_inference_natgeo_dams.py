@@ -770,19 +770,19 @@ def main():
         LOGGER.debug('***** Process country %s', country_iso3)
         work_grid_list = _execute_sqlite(
             '''
-            SELECT grid_id, lng_min, lat_min, lng_max, lat_max
+            SELECT grid_id
             FROM work_status
             WHERE country_list LIKE ? AND processed=0
             ''', WORK_DATABASE_PATH, argument_list=['%%%s%%' % country_iso3],
             fetch='all')
-        for (grid_id, lng_min, lat_min, lng_max, lat_max) in work_grid_list:
+        for (grid_id,) in work_grid_list:
             quad_id_list = _execute_sqlite(
                 '''
                 SELECT quad_id_list
                 FROM grid_id_to_quad_id
                 WHERE grid_id=?
                 ''', planet_grid_id_to_quad_path, argument_list=[grid_id],
-                fetch='all').split(',')
+                fetch='one')[0].split(',')
             # make the score really high
             grid_done_queue.put((grid_id, 100000))
             for quad_id in quad_id_list:
