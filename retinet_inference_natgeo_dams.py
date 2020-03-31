@@ -607,21 +607,27 @@ def postprocessing_worker(
                 if keep:
                     non_max_supression_box_list.append((box, score))
 
-            if non_max_supression_box_list:
-                LOGGER.debug('found %d dams', len(non_max_supression_box_list))
-                raw_image = read_image_bgr(image_path)
-                for box, score in non_max_supression_box_list:
-                    detected_box = shapely.geometry.box(*box)
-                    color = (255, 102, 179)
-                    draw_box(raw_image, detected_box.bounds, color, 1)
-                    draw_caption(raw_image, detected_box.bounds, str(score))
-
-                cv2.imwrite(image_path, raw_image)
-            else:
+            if not non_max_supression_box_list:
                 # no dams detected
                 os.remove(image_path)
                 grid_done_queue.put((grid_id, -1))
                 continue
+
+            # if non_max_supression_box_list:
+            #     LOGGER.debug('found %d dams', len(non_max_supression_box_list))
+            #     raw_image = read_image_bgr(image_path)
+            #     for box, score in non_max_supression_box_list:
+            #         detected_box = shapely.geometry.box(*box)
+            #         color = (255, 102, 179)
+            #         draw_box(raw_image, detected_box.bounds, color, 1)
+            #         draw_caption(raw_image, detected_box.bounds, str(score))
+
+            #     cv2.imwrite(image_path, raw_image)
+            # else:
+            #     # no dams detected
+            #     os.remove(image_path)
+            #     grid_done_queue.put((grid_id, -1))
+            #     continue
 
             # transform local bbs so they're relative to the png
             lng_lat_score_list = []
@@ -670,21 +676,21 @@ def postprocessing_worker(
                         ','.join(country_intersection_list),
                         image_path]))
 
-            # upload .pngs to bucket
-            try:
-                quad_uri = (
-                    'gs://natgeo-dams-data/detected_dam_data/'
-                    'annotated_imagery/%s' % os.path.basename(
-                        image_path))
-                subprocess.run(
-                    'gsutil mv %s %s'
-                    % (image_path, quad_uri), shell=True,
-                    check=True)
-            except subprocess.CalledProcessError:
-                LOGGER.warning(
-                    'file might already exist -- not uploading')
-                if os.path.exists(image_path):
-                    os.remove(image_path)
+            # upload .pngs to bucket this is old code but i want to keep it
+            # try:
+            #     quad_uri = (
+            #         'gs://natgeo-dams-data/detected_dam_data/'
+            #         'annotated_imagery/%s' % os.path.basename(
+            #             image_path))
+            #     subprocess.run(
+            #         'gsutil mv %s %s'
+            #         % (image_path, quad_uri), shell=True,
+            #         check=True)
+            # except subprocess.CalledProcessError:
+            #     LOGGER.warning(
+            #         'file might already exist -- not uploading')
+            #     if os.path.exists(image_path):
+            #         os.remove(image_path)
 
             _execute_sqlite(
                 """
