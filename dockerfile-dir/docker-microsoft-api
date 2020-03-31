@@ -52,4 +52,5 @@ RUN pip install git+https://github.com/richpsharp/ecoshard.git@master
 
 WORKDIR /usr/local/natgeo_dams
 COPY microsoft_api_docker.py /usr/local/natgeo_dams/microsoft_api_docker.py
+COPY resnet50_csv_67.h5 /usr/local/natgeo_dams/resnet50_csv_67.h5
 ENTRYPOINT python microsoft_api_docker.py
