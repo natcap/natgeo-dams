@@ -488,7 +488,11 @@ def process_quad_worker(planet_api_key, quad_queue, work_queue, grid_done_queue)
 
             # copy quad locally
             target_quad_path = os.path.join(CHURN_DIR, '%s.tif' % quad_id)
-            fetch_quad(session, quad_id, target_quad_path)
+            try:
+                fetch_quad(session, quad_id, target_quad_path)
+            except Exception:
+                LOGGER.exception("quad didn't fetch, skip it")
+                continue
 
             quad_info = pygeoprocessing.get_raster_info(target_quad_path)
             n_cols, n_rows = quad_info['raster_size']
