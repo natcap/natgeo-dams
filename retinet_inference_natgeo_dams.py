@@ -707,6 +707,11 @@ def postprocessing_worker(
                 argument_list=lng_lat_score_list, mode='modify',
                 execute='many')
             grid_done_queue.put((grid_id, -1))
+            try:
+                os.remove(image_path)
+            except Exception:
+                LOGGER.exception(
+                    "couldn't remove %s after postprocessing", image_path)
     except Exception:
         LOGGER.exception('error occured')
         raise
