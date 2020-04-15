@@ -826,13 +826,16 @@ def main():
             ''', WORK_DATABASE_PATH, argument_list=['%%%s%%' % country_iso3],
             fetch='all')
         for (grid_id,) in work_grid_list:
-            quad_id_list = _execute_sqlite(
+            quad_id_payload = _execute_sqlite(
                 '''
                 SELECT quad_id_list
                 FROM grid_id_to_quad_id
                 WHERE grid_id=?
                 ''', planet_grid_id_to_quad_path, argument_list=[grid_id],
-                fetch='one')[0].split(',')
+                fetch='one')[0]
+            if not quad_id_payload:
+                continue
+            quad_id_list = quad_id_payload.split(',')
             # make the score really high
             grid_done_queue.put((grid_id, 100000))
             for quad_id in quad_id_list:
