@@ -49,7 +49,6 @@ QUAD_CACHE_DB_PATH = os.path.join(
     'planet_quad_cache_workspace', 'quad_uri.db')
 WORK_DATABASE_PATH = os.path.join(CHURN_DIR, 'natgeo_dams_database.db')
 logging.basicConfig(
-    filename='log.txt',
     level=logging.DEBUG,
     format=(
         '%(asctime)s (%(relativeCreated)d) %(processName)s %(levelname)s '
