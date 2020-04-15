@@ -832,10 +832,10 @@ def main():
                 FROM grid_id_to_quad_id
                 WHERE grid_id=?
                 ''', planet_grid_id_to_quad_path, argument_list=[grid_id],
-                fetch='one')[0]
+                fetch='one')
             if not quad_id_payload:
                 continue
-            quad_id_list = quad_id_payload.split(',')
+            quad_id_list = quad_id_payload[0].split(',')
             # make the score really high
             grid_done_queue.put((grid_id, 100000))
             for quad_id in quad_id_list:
