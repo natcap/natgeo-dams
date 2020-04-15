@@ -172,7 +172,9 @@ def parse_args(args):
     return parser.parse_args(args)
 
 
-@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
+@retrying.retry(
+    wait_exponential_multiplier=100, wait_exponential_max=1000,
+    stop_max_attempt_number=7)
 def _execute_sqlite(
         sqlite_command, database_path, argument_list=None,
         mode='read_only', execute='execute', fetch=None):
