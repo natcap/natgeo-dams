@@ -129,7 +129,7 @@ def create_status_database(database_path):
     LOGGER.debug('launching create_status_database')
     create_database_sql = (
         """
-        CREATE TABLE quad_cache_table (
+        CREATE TABLE IF NOT EXISTS quad_cache_table (
             quad_id TEXT NOT NULL PRIMARY KEY,
             long_min FLOAT NOT NULL,
             lat_min FLOAT NOT NULL,
@@ -139,10 +139,19 @@ def create_status_database(database_path):
             gs_uri TEXT NOT NULL
             );
 
-        CREATE INDEX long_min_index ON quad_cache_table (long_min);
-        CREATE INDEX lat_min_index ON quad_cache_table (lat_min);
-        CREATE INDEX long_max_index ON quad_cache_table (long_max);
-        CREATE INDEX lat_max_index ON quad_cache_table (lat_max);
+        CREATE INDEX IF NOT EXISTS long_min_index ON quad_cache_table (long_min);
+        CREATE INDEX IF NOT EXISTS lat_min_index ON quad_cache_table (lat_min);
+        CREATE INDEX IF NOT EXISTS long_max_index ON quad_cache_table (long_max);
+        CREATE INDEX IF NOT EXISTS lat_max_index ON quad_cache_table (lat_max);
+
+        CREATE TABLE IF NOT EXISTS processed_grid_table (
+            grid_id TEXT NOT NULL PRIMARY KEY,
+            long_min FLOAT NOT NULL,
+            lat_min FLOAT NOT NULL,
+            long_max FLOAT NOT NULL,
+            lat_max FLOAT NOT NULL,
+            status TEXT NOT NULL
+            );
         """)
     if os.path.exists(database_path):
         os.remove(database_path)
@@ -162,9 +171,11 @@ def fetch_quad_worker(
         payload = work_queue.get()
         if payload == 'STOP':
             work_queue.put(payload)
-            mosaic_id, quad_id = payload
-            fetch_quad(
-                session, quad_database_path, mosaic_id, quad_id, cache_dir)
+            mosaic_id, grid_id, quad_id_list = payload
+            for quad_id in quad_id_list:
+                fetch_quad(
+                    session, quad_database_path, mosaic_id, quad_id, cache_dir)
+            # TODO: now update grid id d
 
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
@@ -294,6 +305,8 @@ def main():
 
     task_graph = taskgraph.TaskGraph(CHURN_DIR, -1, 5.0)
 
+    create_status_database(DATABASE_PATH)
+
     work_process_list = []
     work_queue = multiprocessing.Queue(N_WORKERS*2)
     for worker_id in range(N_WORKERS):
@@ -302,6 +315,22 @@ def main():
             args=(work_queue, planet_api_key, DATABASE_PATH, QUAD_DIR))
         work_process.start()
         work_process_list.append(work_process)
+
+    # fetch all the quad ids that have already been fetched
+    quad_id_query = _execute_sqlite(
+        """
+        SELECT quad_id
+        FROM quad_cache_table
+        """, DATABASE_PATH, argument_list=[], fetch='all')
+    quad_id_set = set(x[0] for x in quad_id_query)
+
+    # fetch all the grids (grids contain quads) that have already been fetched
+    processed_grid_id_query = _execute_sqlite(
+        """
+        SELECT grid_id
+        FROM processed_grid_table
+        """, DATABASE_PATH, argument_list=[], fetch='all')
+    processed_grid_set = set(x[0] for x in processed_grid_id_query)
 
     LOGGER.info('prep the country lookup structure')
     avoid_countries = set(['ATA', 'GRL'])
@@ -321,17 +350,30 @@ def main():
 
     for lat in range(90, -90, -1):
         for lng in range(-180, 180):
+            grid_id = (lat+90)*360+lng+180
             box = shapely.geometry.box(lng, lat-1, lng+1, lat)
+            # make sure we intersect a country
             if not all_country_prep.intersects(box):
                 continue
+            # check to see if we've processed this grid before, if so, skip
+            if grid_id in processed_grid_set:
+                continue
+            # get planet quad lists for that grid ID
             quad_id_list = get_quad_ids(
                 session, MOSAIC_ID, lng, lat, lng+1, lat+1)
             if not quad_id_list:
                 continue
+            # remove any quads we've already processed
+            for quad_id in list(quad_id_list):
+                if quad_id in quad_id_set:
+                    quad_id_list.remove(quad_id)
+                    continue
+                quad_id_set.add(quad_id)
+
             LOGGER.debug('%d %d %s', lat, lng, str(quad_id_list))
+            # work queue will take an entire grid and quad list
+            work_queue.put((MOSAIC_ID, grid_id, quad_id_list))
             break
-            for quad_id in quad_id_list:
-                work_queue.put((MOSAIC_ID, quad_id))
 
     work_queue.put('STOP')
     for worker_process in work_process_list:

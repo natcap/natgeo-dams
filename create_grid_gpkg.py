@@ -153,4 +153,30 @@ if __name__ == '__main__':
             layer.CreateFeature(feature)
     layer.CommitTransaction()
 
+    quad_result_list = _execute_sqlite(
+        """
+        SELECT quad_id, long_min, lat_min, long_max, lat_max
+        FROM quad_cache_table
+        """, 'quad_uri.db', argument_list=[], fetch='all')
+    quad_id_set = set(x[0] for x in quad_result_list)
+
+    vector = gpkg_driver.CreateDataSource('quad_fetched_grid.gpkg')
+    wgs84_srs = osr.SpatialReference()
+    wgs84_srs.ImportFromEPSG(4326)
+    layer = vector.CreateLayer(
+        'quad_fetched_grid', wgs84_srs, geom_type=ogr.wkbPolygon)
+
+    LOGGER.info('make the union quad coverage')
+    layer.StartTransaction()
+    quad_list = []
+    for (quad_id, long_min, lat_min, long_max, lat_max) in quad_result_list:
+        box = shapely.geometry.box(long_min, lat_min, long_max, lat_max)
+        quad_list.append(box)
+    quad_union = shapely.ops.cascaded_union(quad_list)
+    feature = ogr.Feature(layer.GetLayerDefn())
+    feature.SetGeometry(ogr.CreateGeometryFromWkb(quad_union.wkb))
+    layer.CreateFeature(feature)
+    layer.CommitTransaction()
+    layer = None
+    vector = None
     LOGGER.info('done')
