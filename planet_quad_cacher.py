@@ -25,7 +25,6 @@ QUAD_DIR = os.path.join(CHURN_DIR, 'quads')
 DATABASE_PATH = os.path.join(WORKSPACE_DIR, 'quad_uri.db')
 N_WORKERS = 4
 
-
 COUNTRY_BORDER_VECTOR_URI = (
     'gs://natgeo-dams-data/ecoshards/'
     'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg')
@@ -295,25 +294,6 @@ def main():
 
     task_graph = taskgraph.TaskGraph(CHURN_DIR, -1, 5.0)
 
-    task_graph.add_task(
-        func=create_status_database,
-        args=(DATABASE_PATH,),
-        target_path_list=[DATABASE_PATH],
-        task_name='create database')
-
-    global_poly_task = task_graph.add_task(
-        func=make_global_poly,
-        args=(COUNTRY_BORDER_VECTOR_URI,),
-        task_name='make global poly')
-    task_graph.close()
-    task_graph.join()
-
-    LOGGER.debug('load countries to shapely')
-
-    LOGGER.debug('global prep')
-    global_shapely_prep = shapely.prepared.prep(global_poly_task.get())
-    LOGGER.debug('start quad search')
-
     work_process_list = []
     work_queue = multiprocessing.Queue(N_WORKERS*2)
     for worker_id in range(N_WORKERS):
@@ -323,16 +303,33 @@ def main():
         work_process.start()
         work_process_list.append(work_process)
 
-    for lat in range(-60, 60):
+    LOGGER.info('prep the country lookup structure')
+    avoid_countries = set(['ATA', 'GRL'])
+    country_vector_path = 'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg'
+    country_vector = gdal.OpenEx(country_vector_path, gdal.OF_VECTOR)
+    country_layer = country_vector.GetLayer()
+    all_country_geom_list = []
+    for country_feature in country_layer:
+        country_geom = country_feature.GetGeometryRef()
+        country_shp = shapely.wkb.loads(country_geom.ExportToWkb())
+        country_iso = country_feature.GetField('iso3')
+        if country_iso not in avoid_countries:
+            all_country_geom_list.append(country_shp)
+    LOGGER.info('prep the geometry for fast intersection')
+    all_country_union = shapely.ops.cascaded_union(all_country_geom_list)
+    all_country_prep = shapely.prepared.prep(all_country_union)
+
+    for lat in range(90, -90, -1):
         for lng in range(-180, 180):
-            query_box = shapely.geometry.box(lng, lat, lng+1, lat+1)
-            if not global_shapely_prep.intersects(query_box):
+            box = shapely.geometry.box(lng, lat-1, lng+1, lat)
+            if not all_country_prep.intersects(box):
                 continue
             quad_id_list = get_quad_ids(
                 session, MOSAIC_ID, lng, lat, lng+1, lat+1)
             if not quad_id_list:
                 continue
             LOGGER.debug('%d %d %s', lat, lng, str(quad_id_list))
+            break
             for quad_id in quad_id_list:
                 work_queue.put((MOSAIC_ID, quad_id))
 
