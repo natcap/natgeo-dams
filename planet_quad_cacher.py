@@ -163,7 +163,8 @@ def create_status_database(database_path):
 
 
 def fetch_quad_worker(
-        work_queue, planet_api_key, quad_database_path, cache_dir):
+        work_queue, planet_api_key, quad_database_path, cache_dir,
+        database_lock):
     """Pull tuples from `work_queue` and process."""
     session = requests.Session()
     session.auth = (planet_api_key, '')
@@ -197,15 +198,16 @@ def fetch_quad_worker(
                 raise RuntimeError(
                     f'error in threaded fetch: {payload}')
 
-        _execute_sqlite(
-            '''
-            INSERT OR REPLACE INTO processed_grid_table
-                (grid_id, long_min, lat_min, long_max, lat_max, status)
-            VALUES (?, ?, ?, ?, ?, ?);
-            ''', quad_database_path,
-            mode='modify', execute='execute',
-            argument_list=[
-                grid_id, long_min, lat_min, long_max, lat_max, "complete"])
+        with database_lock:
+            _execute_sqlite(
+                '''
+                INSERT OR REPLACE INTO processed_grid_table
+                    (grid_id, long_min, lat_min, long_max, lat_max, status)
+                VALUES (?, ?, ?, ?, ?, ?);
+                ''', quad_database_path,
+                mode='modify', execute='execute',
+                argument_list=[
+                    grid_id, long_min, lat_min, long_max, lat_max, "complete"])
         # update the grid database if we did it all
 
 
@@ -345,12 +347,16 @@ def main():
 
     create_status_database(DATABASE_PATH)
 
+    m_manager = multiprocessing.Manager()
+    database_lock = m_manager.Lock()
+
     work_process_list = []
     work_queue = multiprocessing.Queue(N_WORKERS*2)
     for worker_id in range(N_WORKERS):
         work_process = multiprocessing.Process(
             target=fetch_quad_worker,
-            args=(work_queue, planet_api_key, DATABASE_PATH, QUAD_DIR))
+            args=(work_queue, planet_api_key, DATABASE_PATH, QUAD_DIR,
+                  database_lock))
         work_process.start()
         work_process_list.append(work_process)
 
