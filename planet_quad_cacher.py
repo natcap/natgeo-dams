@@ -42,8 +42,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format=(
         '%(asctime)s (%(relativeCreated)d) %(processName)s %(levelname)s '
-        '%(name)s [%(funcName)s:%(lineno)d] %(message)s'),
-    filename='quad_cache_log.txt')
+        '%(name)s [%(funcName)s:%(lineno)d] %(message)s'))
 LOGGER = logging.getLogger(__name__)
 
 
@@ -171,11 +170,17 @@ def fetch_quad_worker(
         payload = work_queue.get()
         if payload == 'STOP':
             work_queue.put(payload)
-            mosaic_id, grid_id, quad_id_list = payload
-            for quad_id in quad_id_list:
-                fetch_quad(
-                    session, quad_database_path, mosaic_id, quad_id, cache_dir)
-            # TODO: now update grid id d
+            break
+        LOGGER.debug(f'this is the payload: {payload}')
+        mosaic_id, grid_id, quad_id_list = payload
+
+        for quad_id in quad_id_list:
+            LOGGER.debug(f'fetching these quad ids: {quad_id_list}')
+            fetch_quad(
+                session, quad_database_path, mosaic_id, quad_id, cache_dir)
+            break
+
+        # update the grid database if we did it all
 
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
@@ -207,7 +212,7 @@ def fetch_quad(
 
         lng_lat_bb = pygeoprocessing.transform_bounding_box(
             local_quad_info['bounding_box'],
-            local_quad_info['projection'],
+            local_quad_info['projection_wkt'],
             WGS84_WKT)
 
         sqlite_update_variables = []
@@ -300,6 +305,7 @@ def main():
     with open(PLANET_API_KEY_FILE, 'r') as planet_api_key_file:
         planet_api_key = planet_api_key_file.read().rstrip()
 
+    LOGGER.debug(f'api key {planet_api_key}')
     session = requests.Session()
     session.auth = (planet_api_key, '')
 
@@ -348,7 +354,7 @@ def main():
     all_country_union = shapely.ops.cascaded_union(all_country_geom_list)
     all_country_prep = shapely.prepared.prep(all_country_union)
 
-    for lat in range(90, -90, -1):
+    for lat in range(71, -90, -1):
         for lng in range(-180, 180):
             grid_id = (lat+90)*360+lng+180
             box = shapely.geometry.box(lng, lat-1, lng+1, lat)
@@ -362,6 +368,7 @@ def main():
             quad_id_list = get_quad_ids(
                 session, MOSAIC_ID, lng, lat, lng+1, lat+1)
             if not quad_id_list:
+                LOGGER.debug(f'no quads found at {lat}N {lng}W ')
                 continue
             # remove any quads we've already processed
             for quad_id in list(quad_id_list):
@@ -370,10 +377,11 @@ def main():
                     continue
                 quad_id_set.add(quad_id)
 
-            LOGGER.debug('%d %d %s', lat, lng, str(quad_id_list))
+            LOGGER.debug('processing these quads %d %d %s', lat, lng, str(quad_id_list))
             # work queue will take an entire grid and quad list
             work_queue.put((MOSAIC_ID, grid_id, quad_id_list))
             break
+        break
 
     work_queue.put('STOP')
     for worker_process in work_process_list:
