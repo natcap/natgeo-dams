@@ -172,14 +172,22 @@ def fetch_quad_worker(
             work_queue.put(payload)
             break
         LOGGER.debug(f'this is the payload: {payload}')
-        mosaic_id, grid_id, quad_id_list = payload
+        mosaic_id, grid_id, long_min, lat_min, long_max, lat_max, quad_id_list = payload
 
         for quad_id in quad_id_list:
             LOGGER.debug(f'fetching these quad ids: {quad_id_list}')
             fetch_quad(
                 session, quad_database_path, mosaic_id, quad_id, cache_dir)
-            break
 
+        _execute_sqlite(
+            '''
+            INSERT OR REPLACE INTO processed_grid_table
+                (grid_id, long_min, lat_min, long_max, lat_max, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+            ''', quad_database_path,
+            mode='modify', execute='execute',
+            argument_list=[
+                grid_id, long_min, lat_min, long_max, lat_max, "complete"])
         # update the grid database if we did it all
 
 
@@ -229,7 +237,11 @@ def fetch_quad(
         except subprocess.CalledProcessError:
             LOGGER.warning('file might already exist')
 
-        os.remove(local_quad_path)
+        try:
+            os.remove(local_quad_path)
+        except:
+            LOGGER.exception(f'could not remove {local_quad_path}')
+
         LOGGER.debug(
             'update sqlite table with these args: %s', sqlite_update_variables)
         _execute_sqlite(
@@ -377,9 +389,11 @@ def main():
                     continue
                 quad_id_set.add(quad_id)
 
-            LOGGER.debug('processing these quads %d %d %s', lat, lng, str(quad_id_list))
+            LOGGER.debug(
+                'processing these quads %d %d %s', lat, lng, str(quad_id_list))
             # work queue will take an entire grid and quad list
-            work_queue.put((MOSAIC_ID, grid_id, quad_id_list))
+            work_queue.put(
+                (MOSAIC_ID, grid_id, lng, lat, lng+1, lat+1, quad_id_list))
             break
         break
 
