@@ -251,7 +251,7 @@ def fetch_quad(
 
         try:
             subprocess.run(
-                '/usr/local/gcloud-sdk/google-cloud-sdk/gsutil cp %s %s'
+                '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s'
                 % (local_quad_path, quad_uri), shell=True, check=True)
         except subprocess.CalledProcessError:
             LOGGER.warning('file might already exist')
