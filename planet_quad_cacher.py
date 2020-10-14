@@ -414,8 +414,6 @@ def main():
             # work queue will take an entire grid and quad list
             work_queue.put(
                 (MOSAIC_ID, grid_id, lng, lat, lng+1, lat+1, quad_id_list))
-            break
-        break
 
     work_queue.put('STOP')
     for worker_process in work_process_list:
