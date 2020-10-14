@@ -201,7 +201,7 @@ def fetch_quad_worker(
             '''
             INSERT OR REPLACE INTO processed_grid_table
                 (grid_id, long_min, lat_min, long_max, lat_max, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?);
             ''', quad_database_path,
             mode='modify', execute='execute',
             argument_list=[
