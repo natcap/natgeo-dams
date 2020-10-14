@@ -407,7 +407,7 @@ def main():
     _database_manager_thread.start()
 
     work_process_list = []
-    work_queue = multiprocessing.Queue(N_WORKERS*2)
+    work_queue = multiprocessing.Queue(N_WORKERS)
     for worker_id in range(N_WORKERS):
         work_process = multiprocessing.Process(
             target=fetch_quad_worker,
