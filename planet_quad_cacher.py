@@ -54,7 +54,7 @@ def _execute_sqlite(
         mode='read_only', execute='execute', fetch=None):
     """Execute SQLite command and attempt retries on a failure.
 
-    Parameters:
+    Args:
         sqlite_command (str): a well formatted SQLite command.
         database_path (str): path to the SQLite database to operate on.
         argument_list (list): `execute == 'execute` then this list is passed to
@@ -120,12 +120,11 @@ def _execute_sqlite(
 def create_status_database(database_path):
     """Create a runtime status database if it doesn't exist.
 
-    Parameters:
+    Args:
         database_path (str): path to database to create.
 
     Returns:
         None.
-
     """
     LOGGER.debug('launching create_status_database')
     create_database_sql = (
@@ -140,10 +139,14 @@ def create_status_database(database_path):
             gs_uri TEXT NOT NULL
             );
 
-        CREATE INDEX IF NOT EXISTS long_min_index ON quad_cache_table (long_min);
-        CREATE INDEX IF NOT EXISTS lat_min_index ON quad_cache_table (lat_min);
-        CREATE INDEX IF NOT EXISTS long_max_index ON quad_cache_table (long_max);
-        CREATE INDEX IF NOT EXISTS lat_max_index ON quad_cache_table (lat_max);
+        CREATE INDEX IF NOT EXISTS long_min_index
+            ON quad_cache_table (long_min);
+        CREATE INDEX IF NOT EXISTS lat_min_index
+            ON quad_cache_table (lat_min);
+        CREATE INDEX IF NOT EXISTS long_max_index
+            ON quad_cache_table (long_max);
+        CREATE INDEX IF NOT EXISTS lat_max_index
+            ON quad_cache_table (lat_max);
 
         CREATE TABLE IF NOT EXISTS processed_grid_table (
             grid_id TEXT NOT NULL PRIMARY KEY,
@@ -175,7 +178,8 @@ def fetch_quad_worker(
             work_queue.put(payload)
             break
         LOGGER.debug(f'this is the payload: {payload}')
-        mosaic_id, grid_id, long_min, lat_min, long_max, lat_max, quad_id_list = payload
+        (mosaic_id, grid_id, long_min, lat_min, long_max, lat_max,
+         quad_id_list) = payload
 
         thread_list = []
         error_queue = queue.Queue()
@@ -215,6 +219,20 @@ def fetch_quad_worker(
 def fetch_quad(
         session, quad_database_path, mosaic_id, quad_id, cache_dir,
         error_queue, database_lock):
+    """Fetch quad from planet DB.
+
+    Args:
+        session (Session): session object to use for authentication
+        quad_database_path (str): path to quad datbase
+        mosaic_id (str): Planet mosaic ID to search for
+        quad_id (str): Planet quad ID in the given mosaic to fetch
+        cache_dir (str): path to directory to write temporary files in
+        error_queue (Queue): put 'OK' here when done with processing
+        datbase_lock (Lock): use this to guard access to the DB.
+
+    Returns:
+        None.
+    """
     try:
         with database_lock:
             count = _execute_sqlite(
@@ -284,6 +302,16 @@ def fetch_quad(
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def get_quad_ids(session, mosaic_id, min_x, min_y, max_x, max_y):
+    """Search Planet for quads in a given bounding box.
+
+    Args:
+        session (Session): Session object to use for authentication
+        mosaic_id (str): Planet mosaic to search in
+        min_x, min_y, max_x, max_y (numeric): bounding box to search over
+
+    Returns:
+        None.
+    """
     bb_query_url = (
         'https://api.planet.com/basemaps/v1/mosaics/'
         '%s/quads?bbox=%f,%f,%f,%f' % (
