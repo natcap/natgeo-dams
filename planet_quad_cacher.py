@@ -47,19 +47,44 @@ logging.basicConfig(
         '%(name)s [%(funcName)s:%(lineno)d] %(message)s'))
 LOGGER = logging.getLogger(__name__)
 
+@retrying.retry(wait_exponential_multiplier=100, wait_exponential_max=1000)
+def _database_manager(database_path, database_command_queue):
+    """Manage a database by accepting commands through the queue."""
+    with sqlite3.connect(database_path) as connection:
+        while True:
+            try:
+                payload = database_command_queue.get()
+                if payload == 'STOP':
+                    break
+                sqlite_command, argument_list, mode, execute = payload
+                if execute == 'execute':
+                    cursor = connection.execute(sqlite_command, argument_list)
+                elif execute == 'many':
+                    cursor = connection.executemany(
+                        sqlite_command, argument_list)
+                elif execute == 'script':
+                    cursor = connection.executescript(sqlite_command)
+                else:
+                    raise ValueError('Unknown execute mode: %s' % execute)
+                cursor.close()
+                connection.commit()
+            except Exception:
+                LOGGER.exception("error in _database_manager")
+                raise
 
 @retrying.retry(wait_exponential_multiplier=100, wait_exponential_max=1000)
 def _execute_sqlite(
-        sqlite_command, database_path, argument_list=None,
-        mode='read_only', execute='execute', fetch=None):
+        sqlite_command, database_path, database_command_queue=None,
+        argument_list=None, mode='read_only', execute='execute', fetch=None):
     """Execute SQLite command and attempt retries on a failure.
 
     Args:
         sqlite_command (str): a well formatted SQLite command.
         database_path (str): path to the SQLite database to operate on.
+        database_command_queue (Queue): if not None, send this command along
+            onto a managed database connection.
         argument_list (list): `execute == 'execute` then this list is passed to
             the internal sqlite3 `execute` call.
-        mode (str): must be either 'read_only' or 'modify'.
         execute (str): must be either 'execute', 'many', or 'script'.
         fetch (str): if not `None` can be either 'all' or 'one'.
             If not None the result of a fetch will be returned by this
@@ -71,18 +96,22 @@ def _execute_sqlite(
     """
     cursor = None
     connection = None
+    if argument_list is None:
+        argument_list = []
     try:
-        if mode == 'read_only':
+        if fetch:
             ro_uri = r'%s?mode=ro' % pathlib.Path(
                 os.path.abspath(database_path)).as_uri()
             LOGGER.debug(
                 '%s exists: %s', ro_uri, os.path.exists(os.path.abspath(
                     database_path)))
             connection = sqlite3.connect(ro_uri, uri=True)
-        elif mode == 'modify':
-            connection = sqlite3.connect(database_path)
+        elif database_command_queue:
+            database_command_queue.put(
+                (sqlite_command, argument_list, mode, execute))
+            return
         else:
-            raise ValueError('Unknown mode: %s' % mode)
+            connection = sqlite3.connect(database_path)
 
         if execute == 'execute':
             cursor = connection.execute(sqlite_command, argument_list)
@@ -167,7 +196,7 @@ def create_status_database(database_path):
 
 def fetch_quad_worker(
         work_queue, planet_api_key, quad_database_path, cache_dir,
-        database_lock):
+        database_lock, database_command_queue):
     """Pull tuples from `work_queue` and process."""
     session = requests.Session()
     session.auth = (planet_api_key, '')
@@ -209,8 +238,8 @@ def fetch_quad_worker(
                     (grid_id, long_min, lat_min, long_max, lat_max, status)
                 VALUES (?, ?, ?, ?, ?, ?);
                 ''', quad_database_path,
-                mode='modify', execute='execute',
-                argument_list=[
+                database_command_queue=database_command_queue,
+                execute='execute', argument_list=[
                     grid_id, long_min, lat_min, long_max, lat_max, "complete"])
         # update the grid database if we did it all
 
@@ -218,7 +247,7 @@ def fetch_quad_worker(
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def fetch_quad(
         session, quad_database_path, mosaic_id, quad_id, cache_dir,
-        error_queue, database_lock):
+        error_queue, database_command_queue):
     """Fetch quad from planet DB.
 
     Args:
@@ -234,13 +263,12 @@ def fetch_quad(
         None.
     """
     try:
-        with database_lock:
-            count = _execute_sqlite(
-                '''
-                SELECT count(quad_id)
-                FROM quad_cache_table
-                WHERE quad_id=?;
-                ''', quad_database_path, argument_list=[quad_id], fetch='one')
+        count = _execute_sqlite(
+            '''
+            SELECT count(quad_id)
+            FROM quad_cache_table
+            WHERE quad_id=?;
+            ''', quad_database_path, argument_list=[quad_id], fetch='one')
         if count[0] > 0:
             LOGGER.debug('already fetched %s', quad_id)
             return
@@ -284,16 +312,15 @@ def fetch_quad(
 
         LOGGER.debug(
             'update sqlite table with these args: %s', sqlite_update_variables)
-        with database_lock:
-            _execute_sqlite(
-                '''
-                INSERT OR REPLACE INTO quad_cache_table
-                    (quad_id, long_min, lat_min, long_max, lat_max, file_size,
-                     gs_uri)
-                VALUES (?, ?, ?, ?, ?, ?, ?);
-                ''', quad_database_path,
-                mode='modify', execute='execute',
-                argument_list=sqlite_update_variables)
+        _execute_sqlite(
+            '''
+            INSERT OR REPLACE INTO quad_cache_table
+                (quad_id, long_min, lat_min, long_max, lat_max, file_size,
+                 gs_uri)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+            ''', quad_database_path,
+            database_command_queue=database_command_queue,
+            execute='execute', argument_list=sqlite_update_variables)
         error_queue.put('OK')
     except Exception:
         LOGGER.exception('error on quad %s' % quad_id)
@@ -377,8 +404,12 @@ def main():
 
     create_status_database(DATABASE_PATH)
 
-    m_manager = multiprocessing.Manager()
-    database_lock = m_manager.Lock()
+    database_command_queue = multiprocessing.Queue()
+
+    _database_manager_thread = threading.Thread(
+        target=_database_manager,
+        args=(DATABASE_PATH, database_command_queue))
+    _database_manager_thread.start()
 
     work_process_list = []
     work_queue = multiprocessing.Queue(N_WORKERS*2)
@@ -386,7 +417,7 @@ def main():
         work_process = multiprocessing.Process(
             target=fetch_quad_worker,
             args=(work_queue, planet_api_key, DATABASE_PATH, QUAD_DIR,
-                  database_lock))
+                  database_command_queue))
         work_process.start()
         work_process_list.append(work_process)
 
@@ -395,7 +426,7 @@ def main():
         """
         SELECT quad_id
         FROM quad_cache_table
-        """, DATABASE_PATH, argument_list=[], fetch='all')
+        """, DATABASE_PATH, fetch='all')
     quad_id_set = set(x[0] for x in quad_id_query)
 
     # fetch all the grids (grids contain quads) that have already been fetched
@@ -403,7 +434,7 @@ def main():
         """
         SELECT grid_id
         FROM processed_grid_table
-        """, DATABASE_PATH, argument_list=[], fetch='all')
+        """, DATABASE_PATH, fetch='all')
     processed_grid_set = set(x[0] for x in processed_grid_id_query)
 
     LOGGER.info('prep the country lookup structure')
@@ -455,6 +486,10 @@ def main():
     for worker_process in work_process_list:
         worker_process.join()
     LOGGER.debug('ALL DONE!')
+    LOGGER.debug("JOINING database manager thread, this might not stop")
+    database_command_queue.put('STOP')
+    _database_manager_thread.join()
+    LOGGER.debug('IT DID STOP!')
 
 
 if __name__ == '__main__':
