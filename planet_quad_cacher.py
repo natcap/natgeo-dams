@@ -196,7 +196,7 @@ def create_status_database(database_path):
 
 def fetch_quad_worker(
         work_queue, planet_api_key, quad_database_path, cache_dir,
-        database_lock, database_command_queue):
+        database_command_queue):
     """Pull tuples from `work_queue` and process."""
     session = requests.Session()
     session.auth = (planet_api_key, '')
@@ -218,7 +218,7 @@ def fetch_quad_worker(
                 target=fetch_quad,
                 args=(
                     session, quad_database_path, mosaic_id, quad_id, cache_dir,
-                    error_queue, database_lock))
+                    error_queue, database_command_queue))
             fetch_worker.start()
             thread_list.append(fetch_worker)
 
@@ -231,16 +231,15 @@ def fetch_quad_worker(
                 raise RuntimeError(
                     f'error in threaded fetch: {payload}')
 
-        with database_lock:
-            _execute_sqlite(
-                '''
-                INSERT OR REPLACE INTO processed_grid_table
-                    (grid_id, long_min, lat_min, long_max, lat_max, status)
-                VALUES (?, ?, ?, ?, ?, ?);
-                ''', quad_database_path,
-                database_command_queue=database_command_queue,
-                execute='execute', argument_list=[
-                    grid_id, long_min, lat_min, long_max, lat_max, "complete"])
+        _execute_sqlite(
+            '''
+            INSERT OR REPLACE INTO processed_grid_table
+                (grid_id, long_min, lat_min, long_max, lat_max, status)
+            VALUES (?, ?, ?, ?, ?, ?);
+            ''', quad_database_path,
+            database_command_queue=database_command_queue,
+            execute='execute', argument_list=[
+                grid_id, long_min, lat_min, long_max, lat_max, "complete"])
         # update the grid database if we did it all
 
 
@@ -400,12 +399,8 @@ def main():
     session = requests.Session()
     session.auth = (planet_api_key, '')
 
-    task_graph = taskgraph.TaskGraph(CHURN_DIR, -1, 5.0)
-
     create_status_database(DATABASE_PATH)
-
     database_command_queue = multiprocessing.Queue()
-
     _database_manager_thread = threading.Thread(
         target=_database_manager,
         args=(DATABASE_PATH, database_command_queue))
