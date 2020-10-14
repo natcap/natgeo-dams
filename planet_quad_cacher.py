@@ -185,7 +185,7 @@ def fetch_quad_worker(
                 target=fetch_quad,
                 args=(
                     session, quad_database_path, mosaic_id, quad_id, cache_dir,
-                    error_queue))
+                    error_queue, database_lock))
             fetch_worker.start()
             thread_list.append(fetch_worker)
 
@@ -214,14 +214,15 @@ def fetch_quad_worker(
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def fetch_quad(
         session, quad_database_path, mosaic_id, quad_id, cache_dir,
-        error_queue):
+        error_queue, database_lock):
     try:
-        count = _execute_sqlite(
-            '''
-            SELECT count(quad_id)
-            FROM quad_cache_table
-            WHERE quad_id=?;
-            ''', quad_database_path, argument_list=[quad_id], fetch='one')
+        with database_lock:
+            count = _execute_sqlite(
+                '''
+                SELECT count(quad_id)
+                FROM quad_cache_table
+                WHERE quad_id=?;
+                ''', quad_database_path, argument_list=[quad_id], fetch='one')
         if count[0] > 0:
             LOGGER.debug('already fetched %s', quad_id)
             return
@@ -265,17 +266,18 @@ def fetch_quad(
 
         LOGGER.debug(
             'update sqlite table with these args: %s', sqlite_update_variables)
-        _execute_sqlite(
-            '''
-            INSERT OR REPLACE INTO quad_cache_table
-                (quad_id, long_min, lat_min, long_max, lat_max, file_size,
-                 gs_uri)
-            VALUES (?, ?, ?, ?, ?, ?, ?);
-            ''', quad_database_path,
-            mode='modify', execute='execute',
-            argument_list=sqlite_update_variables)
+        with database_lock:
+            _execute_sqlite(
+                '''
+                INSERT OR REPLACE INTO quad_cache_table
+                    (quad_id, long_min, lat_min, long_max, lat_max, file_size,
+                     gs_uri)
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+                ''', quad_database_path,
+                mode='modify', execute='execute',
+                argument_list=sqlite_update_variables)
         error_queue.put('OK')
-    except Exception as e:
+    except Exception:
         LOGGER.exception('error on quad %s' % quad_id)
         raise
 
