@@ -48,7 +48,7 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 
 
-@retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
+@retrying.retry(wait_exponential_multiplier=100, wait_exponential_max=1000)
 def _execute_sqlite(
         sqlite_command, database_path, argument_list=None,
         mode='read_only', execute='execute', fetch=None):
