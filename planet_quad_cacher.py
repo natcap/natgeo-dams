@@ -3,8 +3,10 @@ import os
 import logging
 import multiprocessing
 import pathlib
+import queue
 import sqlite3
 import subprocess
+import threading
 
 from osgeo import gdal
 from osgeo import osr
@@ -174,10 +176,26 @@ def fetch_quad_worker(
         LOGGER.debug(f'this is the payload: {payload}')
         mosaic_id, grid_id, long_min, lat_min, long_max, lat_max, quad_id_list = payload
 
+        thread_list = []
+        error_queue = queue.Queue()
         for quad_id in quad_id_list:
             LOGGER.debug(f'fetching these quad ids: {quad_id_list}')
-            fetch_quad(
-                session, quad_database_path, mosaic_id, quad_id, cache_dir)
+            fetch_worker = threading.Thread(
+                target=fetch_quad,
+                args=(
+                    session, quad_database_path, mosaic_id, quad_id, cache_dir,
+                    error_queue))
+            fetch_worker.start()
+            thread_list.append(fetch_worker)
+
+        for thread in thread_list:
+            thread.join()
+
+        for _ in range(len(thread_list)):
+            payload = error_queue.get(False, 10)
+            if payload != 'OK':
+                raise RuntimeError(
+                    f'error in threaded fetch: {payload}')
 
         _execute_sqlite(
             '''
@@ -193,7 +211,8 @@ def fetch_quad_worker(
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def fetch_quad(
-        session, quad_database_path, mosaic_id, quad_id, cache_dir):
+        session, quad_database_path, mosaic_id, quad_id, cache_dir,
+        error_queue):
     try:
         count = _execute_sqlite(
             '''
@@ -239,7 +258,7 @@ def fetch_quad(
 
         try:
             os.remove(local_quad_path)
-        except:
+        except Exception:
             LOGGER.exception(f'could not remove {local_quad_path}')
 
         LOGGER.debug(
@@ -253,7 +272,8 @@ def fetch_quad(
             ''', quad_database_path,
             mode='modify', execute='execute',
             argument_list=sqlite_update_variables)
-    except Exception:
+        error_queue.put('OK')
+    except Exception as e:
         LOGGER.exception('error on quad %s' % quad_id)
         raise
 
