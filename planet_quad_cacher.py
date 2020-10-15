@@ -328,12 +328,14 @@ def fetch_quad(
         None.
     """
     try:
+        LOGGER.debug(f'fetching {quad_id}')
         count = _execute_sqlite(
             '''
             SELECT count(quad_id)
             FROM quad_cache_table
             WHERE quad_id=?;
             ''', quad_database_path, argument_list=[quad_id], fetch='one')
+        LOGGER.debug(f'result of count query {count}')
         if count[0] > 0:
             LOGGER.debug('already fetched %s', quad_id)
             global_report_queue.put(grid_id)
@@ -349,6 +351,7 @@ def fetch_quad(
             'gs://natgeo-dams-data/cached-planet-quads/%s' %
             os.path.basename(local_quad_path))
 
+        LOGGER.debug(f'download {download_url} to {local_quad_path}')
         ecoshard.download_url(download_url, local_quad_path)
         local_quad_info = pygeoprocessing.get_raster_info(local_quad_path)
 
@@ -364,6 +367,7 @@ def fetch_quad(
             pathlib.Path(local_quad_path).stat().st_size)
         sqlite_update_variables.append(quad_uri)
 
+        LOGGER.debug(f'put {quad_uri} to copy from {sqlite_update_variables}')
         to_copy_queue.put(
             (local_quad_path, quad_uri, sqlite_update_variables))
 
