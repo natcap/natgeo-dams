@@ -236,7 +236,6 @@ def fetch_quad_worker(
                 args=(
                     session, quad_database_path, mosaic_id, quad_id, cache_dir,
                     to_copy_queue, global_report_queue, grid_id))
-            #fetch_worker_thread.daemon = True
             fetch_worker_thread.start()
             thread_list.append(fetch_worker_thread)
 
@@ -244,7 +243,6 @@ def fetch_quad_worker(
             target=_copy_quad_to_bucket_worker,
             args=(grid_id, quad_database_path, database_command_queue,
                   to_copy_queue, global_report_queue))
-        copy_quad_to_bucket_worker_thread.daemon = True
         copy_quad_to_bucket_worker_thread.start()
 
         for thread in thread_list:
