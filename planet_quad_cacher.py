@@ -218,6 +218,7 @@ def fetch_quad_worker(
 
     while True:
         payload = work_queue.get()
+        LOGGER.debug(f'fetch_quad_worker payload: {payload}')
         if payload == 'STOP':
             work_queue.put(payload)
             break
@@ -247,6 +248,7 @@ def fetch_quad_worker(
         copy_quad_to_bucket_worker_thread.start()
 
         for thread in thread_list:
+            LOGGER.debug(f"joining thread {thread}")
             thread.join()
 
 
