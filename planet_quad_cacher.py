@@ -230,25 +230,22 @@ def fetch_quad_worker(
 
         thread_list = []
         to_copy_queue = queue.Queue()
+        copy_quad_to_bucket_worker_thread = threading.Thread(
+            target=_copy_quad_to_bucket_worker,
+            args=(grid_id, quad_database_path, database_command_queue,
+                  to_copy_queue, global_report_queue))
+        copy_quad_to_bucket_worker_thread.start()
+        thread_list.append(copy_quad_to_bucket_worker_thread)
+
         for quad_id in quad_id_list:
-            fetch_worker_thread = threading.Thread(
-                target=fetch_quad,
-                args=(
-                    session, quad_database_path, mosaic_id, quad_id, cache_dir,
-                    to_copy_queue, global_report_queue, grid_id))
-            fetch_worker_thread.start()
-            thread_list.append(fetch_worker_thread)
+            fetch_quad(
+                session, quad_database_path, mosaic_id, quad_id, cache_dir,
+                to_copy_queue, global_report_queue, grid_id)
 
-            copy_quad_to_bucket_worker_thread = threading.Thread(
-                target=_copy_quad_to_bucket_worker,
-                args=(grid_id, quad_database_path, database_command_queue,
-                      to_copy_queue, global_report_queue))
-            copy_quad_to_bucket_worker_thread.start()
-            thread_list.append(copy_quad_to_bucket_worker_thread)
-
-        for thread in thread_list:
-            LOGGER.debug(f"joining thread {thread}")
-            thread.join()
+        LOGGER.debug(f"joining thread {copy_quad_to_bucket_worker_thread}")
+        to_copy_queue.put('STOP')
+        copy_quad_to_bucket_worker_thread.join()
+        LOGGER.debug(f'all done with {grid_id}')
 
 
 @retrying.retry()
@@ -428,7 +425,6 @@ def _copy_quad_to_bucket_worker(
                 ''', quad_database_path,
                 database_command_queue=database_command_queue,
                 execute='execute', argument_list=sqlite_update_variables)
-            break
         LOGGER.debug('all done with copy!')
     except Exception:
         LOGGER.exception('global exception on copy quad to bucket worker')
