@@ -224,6 +224,8 @@ def fetch_quad_worker(
         LOGGER.debug(f'this is the payload: {payload}')
         (mosaic_id, grid_id, long_min, lat_min, long_max, lat_max,
          quad_id_list) = payload
+        global_report_queue.put(
+            (grid_id, long_min, lat_min, long_max, lat_max, len(quad_id_list)))
 
         thread_list = []
         to_copy_queue = queue.Queue()
@@ -232,13 +234,10 @@ def fetch_quad_worker(
                 target=fetch_quad,
                 args=(
                     session, quad_database_path, mosaic_id, quad_id, cache_dir,
-                    to_copy_queue))
+                    to_copy_queue, global_report_queue, grid_id))
             fetch_worker_thread.daemon = True
             fetch_worker_thread.start()
             thread_list.append(fetch_worker_thread)
-
-        global_report_queue.put(
-            (grid_id, long_min, lat_min, long_max, lat_max, len(quad_id_list)))
 
         copy_quad_to_bucket_worker_thread = threading.Thread(
             target=_copy_quad_to_bucket_worker,
@@ -311,7 +310,7 @@ def _global_grid_recorder(
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def fetch_quad(
         session, quad_database_path, mosaic_id, quad_id, cache_dir,
-        to_copy_queue):
+        to_copy_queue, global_report_queue, grid_id):
     """Fetch quad from planet DB.
 
     Args:
@@ -321,7 +320,10 @@ def fetch_quad(
         quad_id (str): Planet quad ID in the given mosaic to fetch
         cache_dir (str): path to directory to write temporary files in
         to_copy_queue (Queue): put 'OK' here when done with processing
-
+        global_report_queue (Queue): used to report of the quad need not
+            be downloaded.
+        grid_id (str): unique id to report to global report queue if quad is
+            predownloaded.
     Returns:
         None.
     """
@@ -334,6 +336,7 @@ def fetch_quad(
             ''', quad_database_path, argument_list=[quad_id], fetch='one')
         if count[0] > 0:
             LOGGER.debug('already fetched %s', quad_id)
+            global_report_queue.put(grid_id)
             return
 
         get_quad_url = (
