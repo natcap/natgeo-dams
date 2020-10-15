@@ -239,11 +239,12 @@ def fetch_quad_worker(
             fetch_worker_thread.start()
             thread_list.append(fetch_worker_thread)
 
-        copy_quad_to_bucket_worker_thread = threading.Thread(
-            target=_copy_quad_to_bucket_worker,
-            args=(grid_id, quad_database_path, database_command_queue,
-                  to_copy_queue, global_report_queue))
-        copy_quad_to_bucket_worker_thread.start()
+            copy_quad_to_bucket_worker_thread = threading.Thread(
+                target=_copy_quad_to_bucket_worker,
+                args=(grid_id, quad_database_path, database_command_queue,
+                      to_copy_queue, global_report_queue))
+            copy_quad_to_bucket_worker_thread.start()
+            thread_list.append(copy_quad_to_bucket_worker_thread)
 
         for thread in thread_list:
             LOGGER.debug(f"joining thread {thread}")
@@ -426,6 +427,7 @@ def _copy_quad_to_bucket_worker(
                 ''', quad_database_path,
                 database_command_queue=database_command_queue,
                 execute='execute', argument_list=sqlite_update_variables)
+            break
         LOGGER.debug('all done with copy!')
     except Exception:
         LOGGER.exception('global exception on copy quad to bucket worker')
