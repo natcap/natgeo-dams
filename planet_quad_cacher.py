@@ -396,37 +396,40 @@ def _copy_quad_to_bucket_worker(
     Returns:
         None.
     """
-    while True:
-        try:
-            payload = to_copy_queue.get()
-            LOGGER.debug(f'copy quad to bucket payload {payload}')
-            if payload == 'STOP':
-                break
-            (local_quad_path, quad_uri, sqlite_update_variables) = payload
-            subprocess.run(
-                '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s'
-                % (local_quad_path, quad_uri), shell=True, check=True)
-        except subprocess.CalledProcessError:
-            LOGGER.warning('file might already exist')
+    try:
+        while True:
+            try:
+                payload = to_copy_queue.get()
+                LOGGER.debug(f'copy quad to bucket payload {payload}')
+                if payload == 'STOP':
+                    break
+                (local_quad_path, quad_uri, sqlite_update_variables) = payload
+                subprocess.run(
+                    '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s'
+                    % (local_quad_path, quad_uri), shell=True, check=True)
+            except subprocess.CalledProcessError:
+                LOGGER.warning('file might already exist')
 
-        global_report_queue.put(grid_id)
+            global_report_queue.put(grid_id)
 
-        try:
-            os.remove(local_quad_path)
-        except Exception:
-            LOGGER.exception(f'could not remove {local_quad_path}')
+            try:
+                os.remove(local_quad_path)
+            except Exception:
+                LOGGER.exception(f'could not remove {local_quad_path}')
 
-        LOGGER.debug(
-            'update sqlite table with these args: %s', sqlite_update_variables)
-        _execute_sqlite(
-            '''
-            INSERT OR REPLACE INTO quad_cache_table
-                (quad_id, long_min, lat_min, long_max, lat_max, file_size,
-                 gs_uri)
-            VALUES (?, ?, ?, ?, ?, ?, ?);
-            ''', quad_database_path,
-            database_command_queue=database_command_queue,
-            execute='execute', argument_list=sqlite_update_variables)
+            LOGGER.debug(
+                'update sqlite table with these args: %s', sqlite_update_variables)
+            _execute_sqlite(
+                '''
+                INSERT OR REPLACE INTO quad_cache_table
+                    (quad_id, long_min, lat_min, long_max, lat_max, file_size,
+                     gs_uri)
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+                ''', quad_database_path,
+                database_command_queue=database_command_queue,
+                execute='execute', argument_list=sqlite_update_variables)
+    except Exception:
+        LOGGER.exception('global exception on copy quad to bucket worker')
 
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
