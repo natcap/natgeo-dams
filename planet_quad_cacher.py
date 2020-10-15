@@ -475,10 +475,12 @@ def make_global_poly(vector_url):
 
 
 def main():
+    """Entry point."""
     subprocess.run(
         '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gcloud auth '
         f'activate-service-account --key-file ecoshard-bucket-reader-key.json',
         shell=True, check=True)
+    return
 
     for dir_path in [WORKSPACE_DIR, ECOSHARD_DIR, CHURN_DIR, QUAD_DIR]:
         try:
