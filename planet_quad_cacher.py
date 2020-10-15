@@ -238,6 +238,9 @@ def fetch_quad_worker(
             fetch_worker_thread.start()
             thread_list.append(fetch_worker_thread)
 
+        global_report_queue.put(
+            (grid_id, long_min, lat_min, long_max, lat_max, len(quad_id_list)))
+
         copy_quad_to_bucket_worker_thread = threading.Thread(
             target=_copy_quad_to_bucket_worker,
             args=(grid_id, quad_database_path, database_command_queue,
