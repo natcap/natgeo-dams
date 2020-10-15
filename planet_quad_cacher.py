@@ -397,6 +397,7 @@ def _copy_quad_to_bucket_worker(
     while True:
         try:
             payload = to_copy_queue.get()
+            LOGGER.debug(f'copy quad to bucket payload {payload}')
             if payload == 'STOP':
                 break
             (local_quad_path, quad_uri, sqlite_update_variables) = payload
