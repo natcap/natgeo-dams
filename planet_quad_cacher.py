@@ -1,4 +1,11 @@
-"""Tracer code to set up training pipeline."""
+"""This code should be run once (it has).
+
+This scrapes the specific planet mosaic listed below for all quads in
+the Planetdatabase.
+
+Data are archived at
+https://storage.googleapis.com/natgeo-dams-data/cached_quads_md5_aad6cb4ad9618f610a096a5a8c354d24.gpkg
+"""
 import os
 import logging
 import multiprocessing
@@ -18,7 +25,6 @@ import shapely.geometry
 import shapely.ops
 import shapely.prepared
 import shapely.wkb
-import taskgraph
 
 WORKSPACE_DIR = 'planet_quad_cache_workspace'
 ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
@@ -47,6 +53,7 @@ logging.basicConfig(
         '%(name)s [%(funcName)s:%(lineno)d] %(message)s'))
 LOGGER = logging.getLogger(__name__)
 
+
 @retrying.retry(wait_exponential_multiplier=100, wait_exponential_max=1000)
 def _database_manager(database_path, database_command_queue):
     """Manage a database by accepting commands through the queue."""
@@ -71,6 +78,7 @@ def _database_manager(database_path, database_command_queue):
             except Exception:
                 LOGGER.exception("error in _database_manager")
                 raise
+
 
 @retrying.retry(wait_exponential_multiplier=100, wait_exponential_max=1000)
 def _execute_sqlite(
@@ -323,6 +331,7 @@ def fetch_quad(
             be downloaded.
         grid_id (str): unique id to report to global report queue if quad is
             predownloaded.
+
     Returns:
         None.
     """
@@ -402,8 +411,8 @@ def _copy_quad_to_bucket_worker(
                     break
                 (local_quad_path, quad_uri, sqlite_update_variables) = payload
                 subprocess.run(
-                    '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s'
-                    % (local_quad_path, quad_uri), shell=True, check=True)
+                    '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp '
+                    f'{local_quad_path} {quad_uri}', shell=True, check=True)
             except subprocess.CalledProcessError:
                 LOGGER.warning('file might already exist')
 
@@ -415,7 +424,8 @@ def _copy_quad_to_bucket_worker(
                 LOGGER.exception(f'could not remove {local_quad_path}')
 
             LOGGER.debug(
-                'update sqlite table with these args: %s', sqlite_update_variables)
+                'update sqlite table with these args: %s',
+                sqlite_update_variables)
             _execute_sqlite(
                 '''
                 INSERT OR REPLACE INTO quad_cache_table
@@ -471,21 +481,6 @@ def copy_from_gs(gs_uri, target_path):
     subprocess.run(
         '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s' %
         (gs_uri, target_path), shell=True)
-
-
-def make_global_poly(vector_url):
-    vector_path = os.path.join(CHURN_DIR, os.path.basename(vector_url))
-    copy_from_gs(vector_url, vector_path)
-    vector = gdal.OpenEx(vector_path, gdal.OF_VECTOR)
-    layer = vector.GetLayer()
-    shapely_list = []
-    for feature in layer:
-        shapely_list.append(
-            shapely.wkb.loads(feature.GetGeometryRef().ExportToWkb()))
-        feature = None
-    LOGGER.debug('global unary')
-    global_shapely = shapely.ops.unary_union(shapely_list)
-    return global_shapely
 
 
 def main():
@@ -556,7 +551,8 @@ def main():
 
     LOGGER.info('prep the country lookup structure')
     avoid_countries = set(['ATA', 'GRL'])
-    country_vector_path = 'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg'
+    country_vector_path = \
+        'countries_iso3_md5_6fb2431e911401992e6e56ddf0a9bcda.gpkg'
     country_vector = gdal.OpenEx(country_vector_path, gdal.OF_VECTOR)
     country_layer = country_vector.GetLayer()
     all_country_geom_list = []
