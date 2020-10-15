@@ -25,7 +25,7 @@ ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
 CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
 QUAD_DIR = os.path.join(CHURN_DIR, 'quads')
 DATABASE_PATH = os.path.join(WORKSPACE_DIR, 'quad_uri.db')
-N_WORKERS = multiprocessing.cpu_count() // 2
+N_WORKERS = multiprocessing.cpu_count()
 
 COUNTRY_BORDER_VECTOR_URI = (
     'gs://natgeo-dams-data/ecoshards/'
