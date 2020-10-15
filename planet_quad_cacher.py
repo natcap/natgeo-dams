@@ -293,6 +293,7 @@ def _global_grid_recorder(
                 if global_processing_map[grid_id][0] == 0:
                     long_min, lat_min, long_max, lat_max = \
                         global_processing_map[grid_id][1]
+                    LOGGER.debug(f'done with grid {grid_id}')
                     _execute_sqlite(
                         '''
                         INSERT OR REPLACE INTO processed_grid_table
@@ -601,8 +602,6 @@ def main():
             # work queue will take an entire grid and quad list
             work_queue.put(
                 (MOSAIC_ID, grid_id, lng, lat, lng+1, lat+1, quad_id_list))
-            break
-        break
 
     work_queue.put('STOP')
     for worker_process in work_process_list:
