@@ -228,7 +228,6 @@ def fetch_quad_worker(
         thread_list = []
         to_copy_queue = queue.Queue()
         for quad_id in quad_id_list:
-            LOGGER.debug(f'fetching these quad ids: {quad_id_list}')
             fetch_worker_thread = threading.Thread(
                 target=fetch_quad,
                 args=(
@@ -277,6 +276,7 @@ def _global_grid_recorder(
     try:
         while True:
             payload = global_report_queue.get()
+            LOGGER.debug(f'_global_grid_recorder payload {payload}')
             if payload == 'STOP':
                 break
             if isinstance(payload, tuple):
