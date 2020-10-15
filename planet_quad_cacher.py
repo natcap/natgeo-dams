@@ -428,6 +428,7 @@ def _copy_quad_to_bucket_worker(
                 ''', quad_database_path,
                 database_command_queue=database_command_queue,
                 execute='execute', argument_list=sqlite_update_variables)
+        LOGGER.debug('all done with copy!')
     except Exception:
         LOGGER.exception('global exception on copy quad to bucket worker')
 
