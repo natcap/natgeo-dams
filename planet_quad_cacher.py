@@ -25,7 +25,7 @@ ECOSHARD_DIR = os.path.join(WORKSPACE_DIR, 'ecoshard')
 CHURN_DIR = os.path.join(WORKSPACE_DIR, 'churn')
 QUAD_DIR = os.path.join(CHURN_DIR, 'quads')
 DATABASE_PATH = os.path.join(WORKSPACE_DIR, 'quad_uri.db')
-N_WORKERS = 4
+N_WORKERS = multiprocessing.cpu_count()
 
 COUNTRY_BORDER_VECTOR_URI = (
     'gs://natgeo-dams-data/ecoshards/'
@@ -196,8 +196,23 @@ def create_status_database(database_path):
 
 def fetch_quad_worker(
         work_queue, planet_api_key, quad_database_path, cache_dir,
-        database_command_queue):
-    """Pull tuples from `work_queue` and process."""
+        database_command_queue, global_report_queue):
+    """Pull tuples from `work_queue` and process.
+
+    Args:
+        work_queue (queue): Expect work or STOP from here. If work payload is
+            (mosaic_id, grid_id, long_min, lat_min, long_max, lat_max,
+             quad_id_list)
+        planet_api_key (str): API key for Planet
+        quad_database_path (str): path to main sqlite status database.
+        cache_dir (str): path to directory to allow local copy of files
+        database_command_queue (queue): used to pass to _execute_sqlite so
+            it can do so in an asynchronous manner
+        global_report_queue (queue): used to report when quads are uploaded.
+
+    Returns:
+        None.
+    """
     session = requests.Session()
     session.auth = (planet_api_key, '')
 
@@ -211,42 +226,89 @@ def fetch_quad_worker(
          quad_id_list) = payload
 
         thread_list = []
-        error_queue = queue.Queue()
+        to_copy_queue = queue.Queue()
         for quad_id in quad_id_list:
             LOGGER.debug(f'fetching these quad ids: {quad_id_list}')
-            fetch_worker = threading.Thread(
+            fetch_worker_thread = threading.Thread(
                 target=fetch_quad,
                 args=(
                     session, quad_database_path, mosaic_id, quad_id, cache_dir,
-                    error_queue, database_command_queue))
-            fetch_worker.start()
-            thread_list.append(fetch_worker)
+                    to_copy_queue))
+            fetch_worker_thread.daemon = True
+            fetch_worker_thread.start()
+            thread_list.append(fetch_worker_thread)
+
+        copy_quad_to_bucket_worker_thread = threading.Thread(
+            target=_copy_quad_to_bucket_worker,
+            args=(grid_id, quad_database_path, database_command_queue,
+                  to_copy_queue, global_report_queue))
+        copy_quad_to_bucket_worker_thread.daemon = True
+        copy_quad_to_bucket_worker_thread.start()
 
         for thread in thread_list:
             thread.join()
 
-        for _ in range(len(thread_list)):
-            payload = error_queue.get(False, 10)
-            if payload != 'OK':
-                raise RuntimeError(
-                    f'error in threaded fetch: {payload}')
 
-        _execute_sqlite(
-            '''
-            INSERT OR REPLACE INTO processed_grid_table
-                (grid_id, long_min, lat_min, long_max, lat_max, status)
-            VALUES (?, ?, ?, ?, ?, ?);
-            ''', quad_database_path,
-            database_command_queue=database_command_queue,
-            execute='execute', argument_list=[
-                grid_id, long_min, lat_min, long_max, lat_max, "complete"])
-        # update the grid database if we did it all
+@retrying.retry()
+def _global_grid_recorder(
+        global_processing_map, quad_database_path, database_command_queue,
+        global_report_queue):
+    """Worker to keep track of what's done at a global grid scale.
+
+    Args:
+        global_processing_map (dict): a global dict that can be used to index
+            by `grid_id` into a list containing an element of how many quads
+            to expect and a tuple of the bounding box of the grid
+        quad_database_path (str): path to global database
+        database_command_queue (queue): passed to _execute_sqlite so
+            asyncronous writes can occur
+        global_report_queue (queue): main work queue if not 'STOP' it can be
+            a tuple indicating grid_id and bounding box, it can be a single
+            element being a grid_id of one of its quads that that has been
+            processed. When the count == 0 it will write the result to the
+            database.
+
+    Returns:
+        None.
+    """
+    try:
+        while True:
+            payload = global_report_queue.get()
+            if payload == 'STOP':
+                break
+            if isinstance(payload, tuple):
+                (grid_id, long_min, lat_min, long_max, lat_max,
+                 quad_count) = payload
+                global_processing_map[grid_id] = [
+                    quad_count, (long_min, lat_min, long_max, lat_max)]
+            else:
+                grid_id = payload
+                global_processing_map[grid_id][0] -= 1
+                if global_processing_map[grid_id][0] < 0:
+                    raise RuntimeError(
+                        f'too many grid ids reported for {grid_id}')
+                if global_processing_map[grid_id][0] == 0:
+                    long_min, lat_min, long_max, lat_max = \
+                        global_processing_map[grid_id][1]
+                    _execute_sqlite(
+                        '''
+                        INSERT OR REPLACE INTO processed_grid_table
+                            (grid_id, long_min, lat_min, long_max, lat_max,
+                             status)
+                        VALUES (?, ?, ?, ?, ?, ?);
+                        ''', quad_database_path,
+                        database_command_queue=database_command_queue,
+                        execute='execute', argument_list=[
+                            grid_id, long_min, lat_min, long_max, lat_max,
+                            "complete"])
+    except Exception:
+        LOGGER.exception('something bad happened in _global_grid_recorder')
 
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
 def fetch_quad(
         session, quad_database_path, mosaic_id, quad_id, cache_dir,
-        error_queue, database_command_queue):
+        to_copy_queue):
     """Fetch quad from planet DB.
 
     Args:
@@ -255,8 +317,7 @@ def fetch_quad(
         mosaic_id (str): Planet mosaic ID to search for
         quad_id (str): Planet quad ID in the given mosaic to fetch
         cache_dir (str): path to directory to write temporary files in
-        error_queue (Queue): put 'OK' here when done with processing
-        datbase_lock (Lock): use this to guard access to the DB.
+        to_copy_queue (Queue): put 'OK' here when done with processing
 
     Returns:
         None.
@@ -297,12 +358,45 @@ def fetch_quad(
             pathlib.Path(local_quad_path).stat().st_size)
         sqlite_update_variables.append(quad_uri)
 
+        to_copy_queue.put(
+            (local_quad_path, quad_uri, sqlite_update_variables))
+
+    except Exception:
+        LOGGER.exception('error on quad %s' % quad_id)
+        raise
+
+
+def _copy_quad_to_bucket_worker(
+        grid_id, quad_database_path, database_command_queue, to_copy_queue,
+        global_report_queue):
+    """Copy downloaded quads to google bucket and note in  DB when done.
+
+    Args:
+        grid_id (str): unique ID of the global grid this quad is a part of
+        quad_database_path (str): Path to database
+        database_command_queue (queue): a queue to pass to _execute_sqlit
+        to_copy_queue (queue): command queue that reports either quads to
+            copy or to 'STOP'. Format of copy payload is
+                (local_quad_path, quad_uri, sqlite_update_variables).
+        global_report_queue (queue): send a 'grid_id' down this queue when
+            quad is sucessfully copied to google bucket.
+
+    Returns:
+        None.
+    """
+    while True:
         try:
+            payload = to_copy_queue.get()
+            if payload == 'STOP':
+                break
+            (local_quad_path, quad_uri, sqlite_update_variables) = payload
             subprocess.run(
                 '/usr/local/gcloud-sdk/google-cloud-sdk/bin/gsutil cp %s %s'
                 % (local_quad_path, quad_uri), shell=True, check=True)
         except subprocess.CalledProcessError:
             LOGGER.warning('file might already exist')
+
+        global_report_queue.put(grid_id)
 
         try:
             os.remove(local_quad_path)
@@ -320,10 +414,6 @@ def fetch_quad(
             ''', quad_database_path,
             database_command_queue=database_command_queue,
             execute='execute', argument_list=sqlite_update_variables)
-        error_queue.put('OK')
-    except Exception:
-        LOGGER.exception('error on quad %s' % quad_id)
-        raise
 
 
 @retrying.retry(wait_exponential_multiplier=1000, wait_exponential_max=5000)
@@ -400,21 +490,33 @@ def main():
     session.auth = (planet_api_key, '')
 
     create_status_database(DATABASE_PATH)
+
     database_command_queue = multiprocessing.Queue()
     _database_manager_thread = threading.Thread(
         target=_database_manager,
         args=(DATABASE_PATH, database_command_queue))
     _database_manager_thread.start()
 
+    global_report_queue = multiprocessing.Queue()
     work_process_list = []
     work_queue = multiprocessing.Queue(N_WORKERS)
     for worker_id in range(N_WORKERS):
         work_process = multiprocessing.Process(
             target=fetch_quad_worker,
             args=(work_queue, planet_api_key, DATABASE_PATH, QUAD_DIR,
-                  database_command_queue))
+                  database_command_queue, global_report_queue))
+        work_process.daemon = True
         work_process.start()
         work_process_list.append(work_process)
+
+    global_processing_map = {}
+    _global_grid_recorder_thread = threading.Thread(
+        target=_global_grid_recorder,
+        args=(
+            global_processing_map, DATABASE_PATH, database_command_queue,
+            global_report_queue))
+    _global_grid_recorder_thread.daemon = True
+    _global_grid_recorder_thread.start()
 
     # fetch all the quad ids that have already been fetched
     quad_id_query = _execute_sqlite(
@@ -476,14 +578,16 @@ def main():
             # work queue will take an entire grid and quad list
             work_queue.put(
                 (MOSAIC_ID, grid_id, lng, lat, lng+1, lat+1, quad_id_list))
+            break
+        break
 
     work_queue.put('STOP')
     for worker_process in work_process_list:
         worker_process.join()
     LOGGER.debug('ALL DONE!')
     LOGGER.debug("JOINING database manager thread, this might not stop")
-    database_command_queue.put('STOP')
     _database_manager_thread.join()
+    _global_grid_recorder.join()
     LOGGER.debug('IT DID STOP!')
 
 
