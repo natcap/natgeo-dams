@@ -1,7 +1,6 @@
 """
 Adapted from: https://github.com/fizyr/keras-retinanet
 """
-
 import argparse
 import collections
 import logging

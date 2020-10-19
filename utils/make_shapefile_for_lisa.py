@@ -11,8 +11,8 @@ from osgeo import ogr
 import rtree
 import shapely.wkb
 
-KNOWN_DAMS_VECTOR_PATH = r"C:\Users\richp\Downloads\south_africa_known_dams.gpkg"
-NATGEO_DETECTED_DAMS_DB_PATH = r"C:\Users\richp\Documents\annotated_dams\natgeo_dams_database.db"
+TARGET_VECTOR_PATH = r"C:\Users\richp\Downloads\known_dams.gpkg"
+BASE_DAMS_DB_PATH = r"C:\Users\richp\Documents\annotated_dams\natgeo_dams_database_2020_07_01.db"
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -21,9 +21,6 @@ logging.basicConfig(
         '%(asctime)s (%(relativeCreated)d) %(processName)s %(levelname)s '
         '%(name)s [%(funcName)s:%(lineno)d] %(message)s'))
 LOGGER = logging.getLogger(__name__)
-
-COUNTRY_PRIORITIES = []
-
 
 def _execute_sqlite(
         sqlite_command, database_path, argument_list=None,
@@ -94,97 +91,37 @@ def _execute_sqlite(
 
 
 def main():
-    bounding_box_list = _execute_sqlite(
-        '''
-        SELECT lng_min, lat_min, lng_max, lat_max
-        FROM detected_dams
-        GROUP BY lng_min, lat_min, lng_max, lat_max
-        ''', NATGEO_DETECTED_DAMS_DB_PATH, fetch='all', argument_list=[])
-    gpkg_driver = ogr.GetDriverByName('GPKG')
-    vector = gpkg_driver.CreateDataSource('all_found.gpkg')
-    wgs84_srs = osr.SpatialReference()
-    wgs84_srs.ImportFromEPSG(4326)
-    layer = vector.CreateLayer(
-        'all_found', wgs84_srs, geom_type=ogr.wkbPolygon)
-
-    layer.StartTransaction()
-    for index, (lng_min, lat_min, lng_max, lat_max) in enumerate(
-            bounding_box_list):
-        box = shapely.geometry.box(lng_min, lat_min, lng_max, lat_max)
-        ogr_box = ogr.CreateGeometryFromWkb(box.wkb)
-        feature = ogr.Feature(layer.GetLayerDefn())
-        feature.SetGeometry(ogr.CreateGeometryFromWkb(box.wkb))
-        layer.CreateFeature(feature)
-    layer.CommitTransaction()
-
-    return
-
-    for country_iso in COUNTRY_PRIORITIES + ['']:
-        LOGGER.debug(country_iso)
+    """Entry point."""
+    for table_id, field in [
+            #('detected_dams', 'probability'),
+            ('work_status', 'processed')]:
+        LOGGER.info(f'processing {table_id}')
         bounding_box_list = _execute_sqlite(
-            '''
-            SELECT lng_min, lat_min, lng_max, lat_max
-            FROM detected_dams
-            WHERE country_list LIKE ?
+            f'''
+            SELECT lng_min, lat_min, lng_max, lat_max, {field}
+            FROM {table_id}
             GROUP BY lng_min, lat_min, lng_max, lat_max
-            ''', NATGEO_DETECTED_DAMS_DB_PATH, fetch='all',
-            argument_list=['%%%s%%' % country_iso])
+            ''', BASE_DAMS_DB_PATH, fetch='all', argument_list=[])
         gpkg_driver = ogr.GetDriverByName('GPKG')
-        vector = gpkg_driver.CreateDataSource('%s_found.gpkg' % country_iso)
+        vector = gpkg_driver.CreateDataSource(f'{table_id}.gpkg')
         wgs84_srs = osr.SpatialReference()
         wgs84_srs.ImportFromEPSG(4326)
         layer = vector.CreateLayer(
-            '%s_found' % country_iso, wgs84_srs, geom_type=ogr.wkbPolygon)
+            'known_dams', wgs84_srs, geom_type=ogr.wkbPolygon)
+        layer.CreateField(ogr.FieldDefn(field, ogr.OFTString))
 
+        LOGGER.info(f'starting transaction')
         layer.StartTransaction()
-        for index, (lng_min, lat_min, lng_max, lat_max) in enumerate(
+        for lng_min, lat_min, lng_max, lat_max, field_val in (
                 bounding_box_list):
             box = shapely.geometry.box(lng_min, lat_min, lng_max, lat_max)
-            ogr_box = ogr.CreateGeometryFromWkb(box.wkb)
             feature = ogr.Feature(layer.GetLayerDefn())
+            feature.SetField(field, field_val)
             feature.SetGeometry(ogr.CreateGeometryFromWkb(box.wkb))
             layer.CreateFeature(feature)
+
+        LOGGER.info(f'commiting transaction')
         layer.CommitTransaction()
-
-    return
-    bounding_box_list = _execute_sqlite(
-        '''
-        SELECT lng_min, lat_min, lng_max, lat_max
-        FROM detected_dams
-        WHERE country_list LIKE '%ZAF%'
-        GROUP BY lng_min, lat_min, lng_max, lat_max
-        ''', NATGEO_DETECTED_DAMS_DB_PATH, fetch='all', argument_list=[])
-    LOGGER.debug("build rtree")
-
-    gpkg_driver = ogr.GetDriverByName('GPKG')
-    vector = gpkg_driver.CreateDataSource('sa_found.gpkg')
-    wgs84_srs = osr.SpatialReference()
-    wgs84_srs.ImportFromEPSG(4326)
-    layer = vector.CreateLayer('sa_found', wgs84_srs, geom_type=ogr.wkbPolygon)
-
-    layer.StartTransaction()
-    zaf_index = rtree.index.Index()
-    for index, (lng_min, lat_min, lng_max, lat_max) in enumerate(
-            bounding_box_list):
-        box = shapely.geometry.box(lng_min, lat_min, lng_max, lat_max)
-        ogr_box = ogr.CreateGeometryFromWkb(box.wkb)
-        feature = ogr.Feature(layer.GetLayerDefn())
-        feature.SetGeometry(ogr.CreateGeometryFromWkb(box.wkb))
-        layer.CreateFeature(feature)
-        zaf_index.insert(index, (lng_min, lat_min, lng_max, lat_max))
-    layer.CommitTransaction()
-
-    known_dams_vector = gdal.OpenEx(KNOWN_DAMS_VECTOR_PATH, gdal.OF_VECTOR)
-    known_dams_layer = known_dams_vector.GetLayer()
-    known_dams_count = 0
-    found_dams_count = 0
-    for known_dam_feature in known_dams_layer:
-        known_dam_geometry = known_dam_feature.GetGeometryRef()
-        known_dams_count += 1
-        known_dam_box = shapely.wkb.loads(known_dam_geometry.ExportToWkb())
-        if list(zaf_index.intersection(known_dam_box.bounds)):
-            found_dams_count += 1
-    LOGGER.debug('%d: %d', known_dams_count, found_dams_count)
 
 
 if __name__ == '__main__':

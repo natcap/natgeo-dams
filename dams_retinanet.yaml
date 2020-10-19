@@ -1,7 +1,0 @@
-# dams_retinanet.yaml
-type: 'retinanet'
-train:
-  train_file_pattern: /usr/local/training_data
-eval:
-  eval_file_pattern: /usr/local/validation_data
-  val_json_file: /usr/local/validation_data/validation.json
