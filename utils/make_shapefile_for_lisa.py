@@ -98,7 +98,7 @@ def main():
         LOGGER.info(f'processing {table_id}')
         bounding_box_list = _execute_sqlite(
             f'''
-            SELECT lng_min, lat_min, lng_max, lat_max, {field}
+            SELECT lng_min, lat_min, lng_max, lat_max, grid_id, processed
             FROM {table_id}
             GROUP BY lng_min, lat_min, lng_max, lat_max
             ''', BASE_DAMS_DB_PATH, fetch='all', argument_list=[])
@@ -108,15 +108,17 @@ def main():
         wgs84_srs.ImportFromEPSG(4326)
         layer = vector.CreateLayer(
             'known_dams', wgs84_srs, geom_type=ogr.wkbPolygon)
-        layer.CreateField(ogr.FieldDefn(field, ogr.OFTString))
+        layer.CreateField(ogr.FieldDefn('grid_id', ogr.OFTString))
+        layer.CreateField(ogr.FieldDefn('processed', ogr.OFTString))
 
         LOGGER.info(f'starting transaction')
         layer.StartTransaction()
-        for lng_min, lat_min, lng_max, lat_max, field_val in (
+        for lng_min, lat_min, lng_max, lat_max, grid_id, processed in (
                 bounding_box_list):
             box = shapely.geometry.box(lng_min, lat_min, lng_max, lat_max)
             feature = ogr.Feature(layer.GetLayerDefn())
-            feature.SetField(field, field_val)
+            feature.SetField('grid_id', grid_id)
+            feature.SetField('processed', processed)
             feature.SetGeometry(ogr.CreateGeometryFromWkb(box.wkb))
             layer.CreateFeature(feature)
 
